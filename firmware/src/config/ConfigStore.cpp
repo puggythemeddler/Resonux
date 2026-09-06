@@ -1,0 +1,243 @@
+#include "config/ConfigStore.h"
+#include "config/ConfigDefaults.h"
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+
+static const char kConfigPath[] = "/config.json";
+static const int  kConfigVersion = 1;
+
+namespace {
+
+int clampInt(int v, int lo, int hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+void serializeBands(JsonArray bands, const AudioAnalyzerConfig& a) {
+  for (int b = 0; b < a.bandCount; ++b) {
+    JsonObject o = bands.createNestedObject();
+    o["lo"] = a.bands[b].loHz;
+    o["hi"] = a.bands[b].hiHz;
+  }
+}
+
+void deserializeBands(JsonArray bands, AudioAnalyzerConfig& a) {
+  int n = clampInt((int)bands.size(), 1, kMaxBands);
+  a.bandCount = n;
+  for (int b = 0; b < n; ++b) {
+    JsonObject o = bands[b];
+    a.bands[b].loHz = o["lo"] | a.bands[b].loHz;
+    a.bands[b].hiHz = o["hi"] | a.bands[b].hiHz;
+  }
+}
+
+void serializeStrip(JsonObject s, const StripConfig& c) {
+  s["name"] = c.name;
+  s["driverType"] = c.driverType;
+  s["chipset"] = c.chipset;
+  s["colorOrder"] = c.colorOrder;
+  s["dataPin"] = c.dataPin;
+  s["clockPin"] = c.clockPin;
+  s["ledCount"] = c.ledCount;
+  s["reverse"] = c.reverse;
+  s["zoneCount"] = c.zoneCount;
+  s["commonAnode"] = c.commonAnode;
+  s["pwmFreqHz"] = c.pwmFreqHz;
+  s["effectId"] = c.effectId;
+  s["maxBrightness"] = c.maxBrightness;
+  s["minBrightness"] = c.minBrightness;
+  s["maxCurrentA"] = c.maxCurrentA;
+  s["maxVolts"] = c.maxVolts;
+  s["palette"] = c.palette;
+  s["startHue"] = c.startHue;
+  s["hueSpeed"] = c.hueSpeed;
+  s["sensitivity"] = c.sensitivity;
+  s["decay"] = c.decay;
+  s["targetFps"] = c.targetFps;
+  JsonArray zones = s["zones"].to<JsonArray>();
+  for (int z = 0; z < c.zoneCount; ++z) {
+    JsonObject zo = zones.createNestedObject();
+    JsonArray pins = zo["pins"].to<JsonArray>();
+    for (int j = 0; j < 3; ++j) pins.add(c.zones[z].pins[j]);
+    zo["nPins"] = c.zones[z].nPins;
+    zo["pos"] = c.zones[z].pos01;
+    zo["band"] = c.zones[z].band;
+  }
+}
+
+void deserializeStrip(JsonObject s, StripConfig& c) {
+  strncpy(c.name, s["name"] | c.name, sizeof(c.name) - 1);
+  c.driverType = clampInt(s["driverType"] | c.driverType, 0, DRIVER_TYPE_COUNT - 1);
+  c.chipset = clampInt(s["chipset"] | c.chipset, 0, CHIP_COUNT - 1);
+  c.colorOrder = clampInt(s["colorOrder"] | c.colorOrder, 0, ORDER_COUNT - 1);
+  c.dataPin = s["dataPin"] | c.dataPin;
+  c.clockPin = s["clockPin"] | c.clockPin;
+  c.ledCount = clampInt(s["ledCount"] | c.ledCount, 1, 1000);
+  c.reverse = s["reverse"] | c.reverse;
+  c.zoneCount = clampInt(s["zoneCount"] | c.zoneCount, 1, kMaxStripZones);
+  c.commonAnode = s["commonAnode"] | c.commonAnode;
+  c.pwmFreqHz = s["pwmFreqHz"] | c.pwmFreqHz;
+  c.effectId = clampInt(s["effectId"] | c.effectId, 0, EFFECT_COUNT - 1);
+  c.maxBrightness = clampInt(s["maxBrightness"] | c.maxBrightness, 0, 255);
+  c.minBrightness = clampInt(s["minBrightness"] | c.minBrightness, 0, 255);
+  c.maxCurrentA = s["maxCurrentA"] | c.maxCurrentA;
+  c.maxVolts = s["maxVolts"] | c.maxVolts;
+  c.palette = clampInt(s["palette"] | c.palette, 0, PALETTE_COUNT - 1);
+  c.startHue = clampInt(s["startHue"] | c.startHue, 0, 360);
+  c.hueSpeed = s["hueSpeed"] | c.hueSpeed;
+  c.sensitivity = s["sensitivity"] | c.sensitivity;
+  c.decay = s["decay"] | c.decay;
+  c.targetFps = clampInt(s["targetFps"] | c.targetFps, 1, 120);
+  if (s["zones"].is<JsonArray>()) {
+    JsonArray zones = s["zones"].as<JsonArray>();
+    int zn = clampInt((int)zones.size(), 0, kMaxStripZones);
+    for (int z = 0; z < zn; ++z) {
+      JsonObject zo = zones[z];
+      StripZone& sz = c.zones[z];
+      if (zo["pins"].is<JsonArray>()) {
+        JsonArray pins = zo["pins"].as<JsonArray>();
+        for (int j = 0; j < 3; ++j) sz.pins[j] = pins[j] | -1;
+      }
+      sz.nPins = clampInt(zo["nPins"] | sz.nPins, 1, 3);
+      sz.pos01 = zo["pos"] | sz.pos01;
+      sz.band = zo["band"] | sz.band;
+    }
+  }
+}
+
+}  // namespace
+
+bool ConfigStore::begin() {
+  return LittleFS.begin(true);
+}
+
+bool ConfigStore::exists() {
+  return LittleFS.exists(kConfigPath);
+}
+
+bool ConfigStore::load(Config& cfg) {
+  configDefaults(cfg);
+  if (!exists()) return false;
+  File f = LittleFS.open(kConfigPath, "r");
+  if (!f) return false;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) return false;
+
+  strncpy(cfg.deviceName, doc["deviceName"] | cfg.deviceName,
+          sizeof(cfg.deviceName) - 1);
+  cfg.masterBrightness =
+      clampInt(doc["masterBrightness"] | cfg.masterBrightness, 0, 255);
+  cfg.stripCount = clampInt(doc["stripCount"] | cfg.stripCount, 1, kMaxStrips);
+
+  JsonObject ao = doc["audio"].as<JsonObject>();
+  AudioAnalyzerConfig& a = cfg.audio;
+  if (!ao.isNull()) {
+    a.sampleRate = clampInt(ao["sampleRate"] | a.sampleRate, 8000, 96000);
+    a.fftSize = clampInt(ao["fftSize"] | a.fftSize, 256, 2048);
+    a.hopSize = clampInt(ao["hopSize"] | a.hopSize, 64, a.fftSize);
+    a.gain = ao["gain"] | a.gain;
+    a.normMode = clampInt(ao["normMode"] | a.normMode, 0, 1);
+    a.dbFloor = ao["dbFloor"] | a.dbFloor;
+    a.dbCeil = ao["dbCeil"] | a.dbCeil;
+    a.noiseGate = ao["noiseGate"] | a.noiseGate;
+    a.smooth = ao["smooth"] | a.smooth;
+    a.attack = ao["attack"] | a.attack;
+    a.release = ao["release"] | a.release;
+    a.beatDetect = ao["beatDetect"] | a.beatDetect;
+    a.beatSens = ao["beatSens"] | a.beatSens;
+    a.beatMinGapMs = clampInt(ao["beatMinGapMs"] | a.beatMinGapMs, 50, 2000);
+    a.beatLowBands = clampInt(ao["beatLowBands"] | a.beatLowBands, 1, kMaxBands);
+    a.ampGain = ao["ampGain"] | a.ampGain;
+    a.ampDbFloor = ao["ampDbFloor"] | a.ampDbFloor;
+    a.ampDbCeil = ao["ampDbCeil"] | a.ampDbCeil;
+    if (ao["bands"].is<JsonArray>()) {
+      deserializeBands(ao["bands"].as<JsonArray>(), a);
+    }
+    if (ao["groups"].is<JsonArray>()) {
+      JsonArray groups = ao["groups"].as<JsonArray>();
+      for (int g = 0; g < 5; ++g) {
+        JsonArray r = groups[g];
+        if (!r.isNull()) {
+          a.groupRanges[g][0] = clampInt(r[0] | a.groupRanges[g][0], 0, kMaxBands - 1);
+          a.groupRanges[g][1] = clampInt(r[1] | a.groupRanges[g][1], a.groupRanges[g][0], kMaxBands - 1);
+        }
+      }
+    }
+  }
+
+  cfg.micSck = doc["micSck"] | cfg.micSck;
+  cfg.micWs = doc["micWs"] | cfg.micWs;
+  cfg.micData = doc["micData"] | cfg.micData;
+
+  if (doc["strips"].is<JsonArray>()) {
+    JsonArray strips = doc["strips"].as<JsonArray>();
+    for (int i = 0; i < cfg.stripCount; ++i) {
+      if (i >= kMaxStrips) break;
+      deserializeStrip(strips[i].as<JsonObject>(), cfg.strips[i]);
+    }
+  }
+  return true;
+}
+
+bool ConfigStore::save(const Config& cfg) {
+  JsonDocument doc;
+  doc["version"] = kConfigVersion;
+  doc["deviceName"] = cfg.deviceName;
+  doc["masterBrightness"] = cfg.masterBrightness;
+  doc["stripCount"] = cfg.stripCount;
+  doc["micSck"] = cfg.micSck;
+  doc["micWs"] = cfg.micWs;
+  doc["micData"] = cfg.micData;
+
+  JsonObject ao = doc["audio"].to<JsonObject>();
+  ao["sampleRate"] = cfg.audio.sampleRate;
+  ao["fftSize"] = cfg.audio.fftSize;
+  ao["hopSize"] = cfg.audio.hopSize;
+  ao["gain"] = cfg.audio.gain;
+  ao["normMode"] = cfg.audio.normMode;
+  ao["dbFloor"] = cfg.audio.dbFloor;
+  ao["dbCeil"] = cfg.audio.dbCeil;
+  ao["noiseGate"] = cfg.audio.noiseGate;
+  ao["smooth"] = cfg.audio.smooth;
+  ao["attack"] = cfg.audio.attack;
+  ao["release"] = cfg.audio.release;
+  ao["beatDetect"] = cfg.audio.beatDetect;
+  ao["beatSens"] = cfg.audio.beatSens;
+  ao["beatMinGapMs"] = cfg.audio.beatMinGapMs;
+  ao["beatLowBands"] = cfg.audio.beatLowBands;
+  ao["ampGain"] = cfg.audio.ampGain;
+  ao["ampDbFloor"] = cfg.audio.ampDbFloor;
+  ao["ampDbCeil"] = cfg.audio.ampDbCeil;
+  serializeBands(ao["bands"].to<JsonArray>(), cfg.audio);
+  JsonArray groups = ao["groups"].to<JsonArray>();
+  for (int g = 0; g < 5; ++g) {
+    JsonArray r = groups.createNestedArray();
+    r.add(cfg.audio.groupRanges[g][0]);
+    r.add(cfg.audio.groupRanges[g][1]);
+  }
+
+  JsonArray strips = doc["strips"].to<JsonArray>();
+  for (int i = 0; i < cfg.stripCount; ++i) {
+    JsonObject s = strips.createNestedObject();
+    serializeStrip(s, cfg.strips[i]);
+  }
+
+  File f = LittleFS.open(kConfigPath, "w");
+  if (!f) return false;
+  size_t w = serializeJson(doc, f);
+  f.close();
+  return w > 0;
+}
+
+void ConfigStore::printToSerial(const Config& cfg) {
+  JsonDocument doc;
+  doc["version"] = kConfigVersion;
+  doc["deviceName"] = cfg.deviceName;
+  doc["masterBrightness"] = cfg.masterBrightness;
+  doc["stripCount"] = cfg.stripCount;
+  serializeJson(doc, Serial);
+  Serial.println();
+}

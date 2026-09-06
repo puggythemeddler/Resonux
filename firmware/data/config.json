@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "deviceName": "Music-LED",
+  "masterBrightness": 255,
+  "stripCount": 1,
+  "micSck": 4,
+  "micWs": 5,
+  "micData": 6,
+  "audio": {
+    "sampleRate": 44100,
+    "fftSize": 1024,
+    "hopSize": 512,
+    "gain": 1.0,
+    "normMode": 1,
+    "dbFloor": 0.0,
+    "dbCeil": 0.0,
+    "noiseGate": 0.02,
+    "smooth": true,
+    "attack": 0.60,
+    "release": 0.14,
+    "beatDetect": true,
+    "beatSens": 1.0,
+    "beatMinGapMs": 250,
+    "beatLowBands": 3,
+    "ampGain": 1.5,
+    "ampDbFloor": -55.0,
+    "ampDbCeil": -12.0,
+    "bands": [
+      { "lo": 20, "hi": 60 },
+      { "lo": 60, "hi": 120 },
+      { "lo": 120, "hi": 250 },
+      { "lo": 250, "hi": 500 },
+      { "lo": 500, "hi": 1000 },
+      { "lo": 1000, "hi": 2000 },
+      { "lo": 2000, "hi": 4000 },
+      { "lo": 4000, "hi": 8000 },
+      { "lo": 8000, "hi": 16000 }
+    ],
+    "groups": [[0, 1], [2, 2], [3, 4], [5, 6], [7, 8]]
+  },
+  "strips": [
+    {
+      "name": "Main",
+      "driverType": 0,
+      "chipset": 0,
+      "colorOrder": 0,
+      "dataPin": 48,
+      "clockPin": -1,
+      "ledCount": 60,
+      "reverse": false,
+      "zoneCount": 1,
+      "commonAnode": false,
+      "pwmFreqHz": 1000.0,
+      "effectId": 0,
+      "maxBrightness": 255,
+      "minBrightness": 12,
+      "maxCurrentA": 1.0,
+      "maxVolts": 5.0,
+      "palette": 0,
+      "startHue": 0,
+      "hueSpeed": 8.0,
+      "sensitivity": 1.0,
+      "decay": 0.0,
+      "targetFps": 60,
+      "zones": [
+        { "pins": [-1, -1, -1], "nPins": 1, "pos": 0.0, "band": 0 }
+      ]
+    }
+  ]
+}
