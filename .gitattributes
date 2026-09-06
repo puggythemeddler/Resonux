@@ -1,0 +1,8 @@
+# Git attributes — ensure GitHub language stats match the real stack
+*.h    linguist-language=C++
+*.cpp  linguist-language=C++
+*.hpp  linguist-language=C++
+*.py   linguist-language=Python
+*.ts   linguist-language=TypeScript
+*.tsx  linguist-language=TypeScript
+*.js   linguist-language=JavaScript
