@@ -36,10 +36,15 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
 
   | Category | Examples |
   |---|---|
-  | Addressable digital | WS2812B, WS2811, WS2815, SK6812 (RGB + RGBW), APA102, HD107(S) |
+  | Addressable digital | WS2812B, WS2811, WS2815*, SK6812 (RGB; RGBW white pending), APA102, HD107(S)† |
   | Conventional RGB | 5 V / 12 V RGB strips (common anode/cathode), PWM/MOSFET |
   | Single colour | 5 V / 12 V mono strips, PWM brightness |
   | Future | a new `LEDDriver` subclass — core untouched |
+
+  * `WS2815` uses the WS2812 controller (same 800 kHz protocol); † `HD107(S)`
+  uses the APA102 controller (compatible SPI part). FastLED needs compile-time
+  pins, so addressable data pins are limited to `1,2,3,5-21,33-42,47,48`
+  (default GPIO48); APA102 clock pins to `4,8,10,13,15,18,33,38,47,48`.
 
 - Up to **6 independent strips** (driver, effect, pins, brightness, mapping).
   S3 **dual-core**: audio on core 1, LEDs + web on core 0.
@@ -95,14 +100,15 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 
 ```bash
 cd firmware
-pio run                          # compile
-pio run -t upload                # flash via USB-C
+pio run                          # compile (no hardware needed)
+pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
 
 First run creates WiFi-less defaults matching the wiring above. Change them
 in `firmware/data/config.json` and upload with `pio run -t uploadfs`.
-`platformio.ini` pins Arduino core 2.0.x (proven INMP441 path on S3).
+`platformio.ini` pins Arduino core 2.0.x (proven INMP441 path on S3) and
+FastLED **3.9.0** (compile-time pins — see the addressable note above).
 
 ## Configure
 
@@ -133,8 +139,10 @@ Persistent JSON on LittleFS, validated + clamped at load. The web dashboard
 
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
-drivers + runtime) is implemented; hardware bring-up and the web dashboard
-are underway.
+drivers + runtime) is implemented and **compiles cleanly for ESP32-S3**
+(~28 % RAM / ~46 % flash at the default config); hardware bring-up is pending
+parts arrival (see `docs/HARDWARE.md`), with the web dashboard planned for
+Phase 4.
 
 ## License / ownership
 

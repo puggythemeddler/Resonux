@@ -80,10 +80,13 @@ PSU or shared rail with fused branches.
 
 ### 3.2 WS2815 / SK6812 variants
 
-- WS2815 is a 12 V cousin of WS2812 but **a different protocol part** — the
-  firmware selects the chipset in config; wiring identical in spirit (12 V
-  rail, bulk cap, injection at 12 V with corresponding math).
-- SK6812 RGBW uses 4 bytes/LED — firmware `colorOrder=RGBW`; wiring same.
+- WS2815 is a 12 V cousin of WS2812 using the **same 800 kHz protocol** — the
+  driver runs it on the WS2812 controller (`chipset=WS2815` in config); wiring
+  identical in spirit (12 V rail, bulk cap, injection at 12 V with
+  corresponding math).
+- SK6812 RGBW uses 4 bytes/LED. The current build maps `ORDER_RGBW` to GRB
+  (white channel not driven until FastLED exposes native RGBW), so treat
+  RGBW strips as RGB for now; wiring same.
 
 ### 3.3 APA102 / HD107 (clocked SPI family)
 
@@ -204,6 +207,11 @@ The LED abstraction already isolates this; wiring is per-module datasheet.
 | Serial (USB-C) | on-board | 115200 baud |
 
 S3 strapping/USB pins to **avoid** for LED/audio: 0, 3, 19, 20, 45, 46.
+
+Addressable pins are compiled into the firmware: data `1,2,3,5-21,33-42,47,48`
+(default GPIO48), APA102 clock `4,8,10,13,15,18,33,38,47,48`. A pin outside
+these sets makes `begin()` fail cleanly to avoid driving an uninstantiated
+output.
 
 ---
 

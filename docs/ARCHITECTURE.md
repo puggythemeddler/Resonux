@@ -139,10 +139,14 @@ Bluetooth A2DP Sink (music you're already streaming), I2S line-in codec
 
 | Category | Example parts | Driver | Control |
 |---|---|---|---|
-| Addressable digital | WS2812B, WS2811, WS2815, SK6812 (RGB/RGBW), APA102, HD107(S) | `AddressableLEDDriver` | FastLED (RMT on ESP32-S3) |
+| Addressable digital | WS2812B, WS2811, WS2815*, SK6812 (RGB; RGBW white pending), APA102, HD107(S)† | `AddressableLEDDriver` | FastLED (RMT on ESP32-S3) |
 | Conventional RGB (non-addressable) | 5 V / 12 V RGB strips, common anode or cathode | `AnalogRGBDriver` | 3x LEDC PWM per physical zone |
 | Single colour | 5 V / 12 V mono strips | `SingleColorDriver` | 1x LEDC PWM per physical zone |
 | Future | DMX-512, dot-matrix, TLC5940, dumb-addressable | new `LEDDriver` subclass | whatever it needs |
+
+* `WS2815` runs on the `WS2812` controller (same 800 kHz clockless protocol);
+† `HD107(S)` runs on the `APA102` controller (compatible SPI part). The
+compiled GPIO pin sets are listed in §4.1.
 
 ### Segment (logical light) model
 
@@ -187,20 +191,26 @@ public:
 
 ### Addressable driver (FastLED backend)
 
-FastLED provides the low-level protocol encoding (RMT on ESP32-S3) for the full
-one-wire family (WS281x, SK6812 RGB+RGBW) and SPI family (APA102, HD107).
-Compile-time chipset × colour-order variants are instantiated and selected at
+FastLED provides the low-level protocol encoding (RMT on ESP32-S3) for the
+one-wire family (WS281x, SK6812) and SPI family (APA102). FastLED requires
+**compile-time** chipset × colour-order × GPIO values, so `AddressableLEDDriver`
+instantiates every supported (chipset, order, pin) triple and selects it at
 runtime from config:
 
-| Chipset  | Orders instantiated  |
-|---|---|
-| WS2812   | GRB, RGB   |
-| WS2811   | GRB        |
-| WS2815   | GRB        |
-| SK6812   | GRB        |
-| SK6812   | RGBW (native 4-channel) |
-| APA102   | BGR, RGB   |
-| HD107S   | BGR        |
+| Chipset   | Controller used | Orders instantiated |
+|---|---|---|
+| WS2812    | `WS2812` | GRB, RGB |
+| WS2811    | `WS2811` | GRB, RGB |
+| WS2815    | `WS2812` (same 800 kHz protocol) | GRB, RGB |
+| SK6812    | `SK6812` | GRB, RGB |
+| SK6812 RGBW | `SK6812` — FastLED 3.9.0 exposes no native white channel; `ORDER_RGBW` maps to GRB (RGBW = future work) | GRB |
+| APA102    | `APA102` (SPI enum) | GRB, RGB, BRG, BGR |
+| HD107S    | `APA102` (compatible SPI part) | GRB, RGB, BRG, BGR |
+
+Addressable **data pins** are limited to the compiled set `1, 2, 3, 5-21,
+33-42, 47, 48`; SPI **clock pins** to `4, 8, 10, 13, 15, 18, 33, 38, 47, 48`.
+A configured pin outside these sets makes `begin()` fail cleanly (driver left
+inactive). Extend the pin lists in `AddressableLEDDriver.cpp` to add a GPIO.
 
 Supporting per-strip: `ledCount`, data pin (+clock pin for SPI parts), colour
 order, reverse, brightness cap, per-strip power/current software limit
@@ -515,7 +525,7 @@ reboot).
 
 | Library | Use | Why |
 |---|---|---|
-| `fastled/FastLED` @ ^3.9 | addressable LED protocol | the universal addressable back-end; WS2812..APA102/HD107 |
+| `fastled/FastLED` @ 3.9.0 | addressable LED protocol | the addressable back-end; pinned 3.9.0 — compile-time pins, see §4.1 |
 | `bblanchon/ArduinoJson` @ ^7 | config (de)serialization | standard, deterministic, no dynamic deps |
 | `arduinoFFT` @ ^2 | FFT | small, portable float FFT, puredsp-free |
 

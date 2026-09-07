@@ -31,10 +31,11 @@ public:
 
 private:
   void applyPowerLimit();
-  template <typename Chip, EOrder Ord>
-  void addOneWire(int pin);
-  template <typename Chip, EOrder Ord>
-  void addClocked(int pin, int clockPin);
+  static EOrder fastledOrder(int order);
+  template <template<uint8_t DATA_PIN, EOrder RGB_ORDER> class Chip, EOrder Ord>
+  bool addOneWire(int pin);
+  template <EOrder Ord>
+  bool addClocked(int pin, int clockPin);
 
   int      _dataPin;
   int      _clockPin;
@@ -46,5 +47,4 @@ private:
   int      _maxMa = -1;
   float    _volts = 5.0f;
   CRGB*    _leds = nullptr;
-  bool     _added = false;
 };
