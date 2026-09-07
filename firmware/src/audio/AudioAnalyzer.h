@@ -3,7 +3,7 @@
 #include "audio/AudioFrame.h"
 #include "audio/BeatDetector.h"
 #include "config/ConfigDefs.h"
-#include <ArduinoFFT.h>
+#include <arduinoFFT.h>
 
 struct BandDef {
   float loHz;
