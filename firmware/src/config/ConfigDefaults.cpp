@@ -4,7 +4,7 @@
 static const char kDeviceName[] = "Music-LED";
 
 void configDefaults(Config& cfg) {
-  memset(&cfg, 0, sizeof(Config));
+  cfg = Config();
   strncpy(cfg.deviceName, kDeviceName, sizeof(cfg.deviceName) - 1);
 
   cfg.micSck = 4;

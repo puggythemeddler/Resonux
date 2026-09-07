@@ -23,7 +23,6 @@ public:
     for (int i = 0; i < n; ++i) {
       float d = (n > 1) ? fabsf((float)i - half) / half : 1.0f;
       float lit = 1.0f - d;
-      float colT = 1.0f - lit;
       Rgb c = Rgb{0, 0, 0};
       if (lit <= lev) {
         c = paletteColor(p.palette, 1.0f - lit);

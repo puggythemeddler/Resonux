@@ -16,7 +16,7 @@ int clampInt(int v, int lo, int hi) {
 
 void serializeBands(JsonArray bands, const AudioAnalyzerConfig& a) {
   for (int b = 0; b < a.bandCount; ++b) {
-    JsonObject o = bands.createNestedObject();
+    JsonObject o = bands.add<JsonObject>();
     o["lo"] = a.bands[b].loHz;
     o["hi"] = a.bands[b].hiHz;
   }
@@ -57,7 +57,7 @@ void serializeStrip(JsonObject s, const StripConfig& c) {
   s["targetFps"] = c.targetFps;
   JsonArray zones = s["zones"].to<JsonArray>();
   for (int z = 0; z < c.zoneCount; ++z) {
-    JsonObject zo = zones.createNestedObject();
+    JsonObject zo = zones.add<JsonObject>();
     JsonArray pins = zo["pins"].to<JsonArray>();
     for (int j = 0; j < 3; ++j) pins.add(c.zones[z].pins[j]);
     zo["nPins"] = c.zones[z].nPins;
@@ -214,14 +214,14 @@ bool ConfigStore::save(const Config& cfg) {
   serializeBands(ao["bands"].to<JsonArray>(), cfg.audio);
   JsonArray groups = ao["groups"].to<JsonArray>();
   for (int g = 0; g < 5; ++g) {
-    JsonArray r = groups.createNestedArray();
+    JsonArray r = groups.add<JsonArray>();
     r.add(cfg.audio.groupRanges[g][0]);
     r.add(cfg.audio.groupRanges[g][1]);
   }
 
   JsonArray strips = doc["strips"].to<JsonArray>();
   for (int i = 0; i < cfg.stripCount; ++i) {
-    JsonObject s = strips.createNestedObject();
+    JsonObject s = strips.add<JsonObject>();
     serializeStrip(s, cfg.strips[i]);
   }
 

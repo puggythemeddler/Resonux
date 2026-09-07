@@ -44,7 +44,7 @@ bool AudioAnalyzer::begin() {
   memset(_smooth, 0, sizeof(_smooth));
   memset(_peak, 0, sizeof(_peak));
   memset(_autoCeil, 0, sizeof(_autoCeil));
-  memset(&_frame, 0, sizeof(_frame));
+  _frame = AudioFrame();
   return true;
 }
 
