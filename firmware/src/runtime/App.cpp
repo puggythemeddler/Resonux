@@ -38,6 +38,18 @@ bool App::begin() {
 
   buildStrips();
 
+  if (_config.artnet.enabled) {
+    _artnet = new ArtNetNode(_config.artnet, _config.fixtures,
+                             _config.fixtureCount);
+    if (_artnet->begin()) {
+      logBoot("artnet", "node active (%s)", _artnet->statusString());
+    } else {
+      logBoot("artnet", "init FAILED or disabled");
+      delete _artnet;
+      _artnet = nullptr;
+    }
+  }
+
   _mutex = xSemaphoreCreateMutex();
   if (!_mutex) return false;
 
@@ -86,6 +98,7 @@ void App::audioLoop() {
       _framesCount = fc;
       xSemaphoreGive(_mutex);
     }
+    if (_artnet) _artnet->setAudioFrame(f);
     _lastSeenFrame = fc;
   }
   vTaskDelay(1);

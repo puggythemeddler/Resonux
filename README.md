@@ -8,8 +8,9 @@
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-informational)](LICENSE)
 
 **Music-reactive LED controller** — one audio-analysis + effects core with
-interchangeable LED output drivers. A real-time spectrum/beat engine on
-ESP32-S3 driving any common LED strip family.
+interchangeable output drivers. A real-time spectrum/beat engine on
+ESP32-S3 driving any common LED strip family **or** DMX moving-head fixtures
+over Art-Net.
 
 ## Languages & stack
 
@@ -48,7 +49,11 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
 
 - Up to **6 independent strips** (driver, effect, pins, brightness, mapping).
   S3 **dual-core**: audio on core 1, LEDs + web on core 0.
-- **JSON config** on LittleFS (`firmware/data` → `/config.json`, versioned).
+- **Json config** on LittleFS (`firmware/data` → `/config.json`, versioned).
+- **Art-Net DMX output** — optional; drives club-style moving heads & LED
+  pars over WiFi (no extra hardware). Audio-reactive: pan/tilt swing on
+  amplitude + bass, color from bass/beat, strobe on beat. See
+  `docs/ARTNET.md`.
 
 See `docs/ARCHITECTURE.md` for the full design.
 
@@ -110,6 +115,33 @@ in `firmware/data/config.json` and upload with `pio run -t uploadfs`.
 `platformio.ini` pins Arduino core 2.0.x (proven INMP441 path on S3) and
 FastLED **3.9.0** (compile-time pins — see the addressable note above).
 
+### Art-Net (moving heads)
+
+Art-Net is **off by default**; enable it in the `artnet` section of
+`config.json`, then list fixtures. The ESP32-S3 joins your WiFi and broadcasts
+a 512-channel DMX universe.
+
+```json
+"artnet": {
+  "enabled": true,
+  "ssid": "your-network",
+  "password": "your-password",
+  "universe": 0,
+  "audioReactive": true,
+  "panSpeed": 0.5,
+  "tiltSpeed": 0.5,
+  "colorSensitivity": 1.0
+},
+"fixtures": [
+  { "profileId": 1, "dmxAddress": 1, "count": 2 }
+]
+```
+
+Fixture profiles: `0` off, `1` 8-ch moving head, `2` 16-ch moving head,
+`3` 4-ch LED par. Every configured fixture is driven from the same audio
+analysis; no DMX transceiver is required (Art-Net is sent over WiFi). See
+`docs/ARTNET.md`.
+
 ## Configure
 
 Persistent JSON on LittleFS, validated + clamped at load. The web dashboard
@@ -130,6 +162,7 @@ Persistent JSON on LittleFS, validated + clamped at load. The web dashboard
 
 - `docs/ARCHITECTURE.md` — system design & data flow
 - `docs/HARDWARE.md` — electrical, wiring, power (read before scaling up!)
+- `docs/ARTNET.md` — Art-Net DMX output (moving heads, fixtures)
 - `docs/BOM.md` — bill of materials (Phase 2)
 - `docs/TESTING.md` — test strategy & tools
 - `docs/WEB_DASHBOARD.md` — Phase 4 dashboard spec
@@ -139,10 +172,10 @@ Persistent JSON on LittleFS, validated + clamped at load. The web dashboard
 
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
-drivers + runtime) is implemented and **compiles cleanly for ESP32-S3**
-(~28 % RAM / ~46 % flash at the default config); hardware bring-up is pending
-parts arrival (see `docs/HARDWARE.md`), with the web dashboard planned for
-Phase 4.
+drivers + runtime) plus Art-Net DMX output is implemented and **compiles
+cleanly for ESP32-S3** (~28 % RAM / ~46 % flash at the default config);
+hardware bring-up is pending parts arrival (see `docs/HARDWARE.md`), with the
+web dashboard planned for Phase 4.
 
 ## License / ownership
 

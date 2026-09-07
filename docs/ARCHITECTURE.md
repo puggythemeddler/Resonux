@@ -638,6 +638,31 @@ microphone-free path for phones.
 
 ---
 
+## 18b. Art-Net DMX output (moving heads over Wi-Fi)
+
+Full details: `docs/ARTNET.md`. Summary:
+
+- **Why Art-Net:** DMX512 fixtures (moving heads, LED pars) use DMX-512/A.
+  Over Wi-Fi we send *Art-Net* UDP (port 6454) — no transceiver, no cabling —
+  the same packets a lighting console sends.
+- **Module:** `src/artnet/ArtNetNode` — its own FreeRTOS task (core 0):
+  - joins the configured SSID (STA, DHCP or static), reconnects on drop,
+  - owns a 512-channel DMX output buffer, broadcasts ArtDmx ~40 Hz,
+  - answers ArtPoll so consoles/discovery find the node,
+  - can also *receive* ArtDmx (controller drives its universe).
+- **Fixture profiles:** `src/artnet/FixtureProfile.h` — named channel maps
+  (8-ch / 16-ch moving head, 4-ch LED par). Each config entry assigns
+  `profileId + dmxAddress + count`; consecutive addresses are auto-filled.
+- **Audio-reactive mapping:** the same `AudioFrame` that feeds LED effects
+  drives the DMX universe — amplitude→dimmer, bass+beat→pan/tilt swing,
+  hue from bass+beat→RGB, beat→strobe/prism.
+- **Integration:** `App::audioLoop` publishes frames to the node; config
+  (`artnet` + `fixtures` sections) persists in LittleFS and is off by default.
+- Boundaries preserved: the node never touches LEDs/effects; it only consumes
+  `AudioFrame` and writes DMX bytes.
+
+---
+
 ## 19. Web dashboard architecture (TypeScript + React)
 
 Full details: `docs/WEB_DASHBOARD.md`. Summary:

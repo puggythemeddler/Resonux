@@ -179,6 +179,48 @@ bool ConfigStore::load(Config& cfg) {
       deserializeStrip(strips[i].as<JsonObject>(), cfg.strips[i]);
     }
   }
+
+  JsonObject an = doc["artnet"].as<JsonObject>();
+  if (!an.isNull()) {
+    cfg.artnet.enabled = an["enabled"] | cfg.artnet.enabled;
+    strncpy(cfg.artnet.ssid, an["ssid"] | cfg.artnet.ssid,
+            sizeof(cfg.artnet.ssid) - 1);
+    strncpy(cfg.artnet.password, an["password"] | cfg.artnet.password,
+            sizeof(cfg.artnet.password) - 1);
+    cfg.artnet.useDhcp = an["useDhcp"] | cfg.artnet.useDhcp;
+    if (an["staticIp"].is<JsonArray>()) {
+      JsonArray a = an["staticIp"].as<JsonArray>();
+      for (int i = 0; i < 4; ++i) cfg.artnet.staticIp[i] = a[i] | 0;
+    }
+    if (an["staticMask"].is<JsonArray>()) {
+      JsonArray a = an["staticMask"].as<JsonArray>();
+      for (int i = 0; i < 4; ++i) cfg.artnet.staticMask[i] = a[i] | 0;
+    }
+    if (an["staticGw"].is<JsonArray>()) {
+      JsonArray a = an["staticGw"].as<JsonArray>();
+      for (int i = 0; i < 4; ++i) cfg.artnet.staticGw[i] = a[i] | 0;
+    }
+    cfg.artnet.universe = an["universe"] | cfg.artnet.universe;
+    cfg.artnet.audioReactive = an["audioReactive"] | cfg.artnet.audioReactive;
+    cfg.artnet.panSpeed = an["panSpeed"] | cfg.artnet.panSpeed;
+    cfg.artnet.tiltSpeed = an["tiltSpeed"] | cfg.artnet.tiltSpeed;
+    cfg.artnet.colorSensitivity =
+        an["colorSensitivity"] | cfg.artnet.colorSensitivity;
+  }
+
+  if (doc["fixtures"].is<JsonArray>()) {
+    JsonArray fixes = doc["fixtures"].as<JsonArray>();
+    cfg.fixtureCount =
+        clampInt((int)fixes.size(), 0, kMaxFixtures);
+    for (int i = 0; i < cfg.fixtureCount; ++i) {
+      JsonObject fx = fixes[i].as<JsonObject>();
+      cfg.fixtures[i].profileId =
+          clampInt(fx["profileId"] | 0, 0, FIXTURE_COUNT - 1);
+      cfg.fixtures[i].dmxAddress =
+          clampInt(fx["dmxAddress"] | 1, 1, kDmxChannels);
+      cfg.fixtures[i].count = clampInt(fx["count"] | 0, 0, 16);
+    }
+  }
   return true;
 }
 
@@ -223,6 +265,31 @@ bool ConfigStore::save(const Config& cfg) {
   for (int i = 0; i < cfg.stripCount; ++i) {
     JsonObject s = strips.add<JsonObject>();
     serializeStrip(s, cfg.strips[i]);
+  }
+
+  JsonObject an = doc["artnet"].to<JsonObject>();
+  an["enabled"] = cfg.artnet.enabled;
+  an["ssid"] = cfg.artnet.ssid;
+  an["password"] = cfg.artnet.password;
+  an["useDhcp"] = cfg.artnet.useDhcp;
+  JsonArray sip = an["staticIp"].to<JsonArray>();
+  for (int i = 0; i < 4; ++i) sip.add(cfg.artnet.staticIp[i]);
+  JsonArray smask = an["staticMask"].to<JsonArray>();
+  for (int i = 0; i < 4; ++i) smask.add(cfg.artnet.staticMask[i]);
+  JsonArray sgw = an["staticGw"].to<JsonArray>();
+  for (int i = 0; i < 4; ++i) sgw.add(cfg.artnet.staticGw[i]);
+  an["universe"] = cfg.artnet.universe;
+  an["audioReactive"] = cfg.artnet.audioReactive;
+  an["panSpeed"] = cfg.artnet.panSpeed;
+  an["tiltSpeed"] = cfg.artnet.tiltSpeed;
+  an["colorSensitivity"] = cfg.artnet.colorSensitivity;
+
+  JsonArray fixes = doc["fixtures"].to<JsonArray>();
+  for (int i = 0; i < cfg.fixtureCount; ++i) {
+    JsonObject fx = fixes.add<JsonObject>();
+    fx["profileId"] = cfg.fixtures[i].profileId;
+    fx["dmxAddress"] = cfg.fixtures[i].dmxAddress;
+    fx["count"] = cfg.fixtures[i].count;
   }
 
   File f = LittleFS.open(kConfigPath, "w");

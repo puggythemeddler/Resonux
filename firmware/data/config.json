@@ -66,5 +66,20 @@
         { "pins": [-1, -1, -1], "nPins": 1, "pos": 0.0, "band": 0 }
       ]
     }
-  ]
+  ],
+  "artnet": {
+    "enabled": false,
+    "ssid": "",
+    "password": "",
+    "useDhcp": true,
+    "staticIp": [0, 0, 0, 0],
+    "staticMask": [255, 255, 255, 0],
+    "staticGw": [0, 0, 0, 0],
+    "universe": 0,
+    "audioReactive": true,
+    "panSpeed": 0.5,
+    "tiltSpeed": 0.5,
+    "colorSensitivity": 1.0
+  },
+  "fixtures": []
 }

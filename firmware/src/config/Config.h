@@ -31,6 +31,35 @@ struct StripConfig {
   uint8_t targetFps = 60;
 };
 
+enum FixtureProfileId : int {
+  FIXTURE_OFF          = 0,
+  FIXTURE_MOVING_HEAD_8  = 1,
+  FIXTURE_MOVING_HEAD_16 = 2,
+  FIXTURE_LED_PAR_4      = 3,
+  FIXTURE_COUNT          = 4
+};
+
+struct FixtureConfig {
+  int  profileId   = 0;
+  int  dmxAddress  = 1;
+  int  count       = 0;
+};
+
+struct ArtNetConfig {
+  bool    enabled        = false;
+  char    ssid[33]       = "";
+  char    password[65]   = "";
+  bool    useDhcp        = true;
+  uint8_t staticIp[4]    = {};
+  uint8_t staticMask[4]  = {};
+  uint8_t staticGw[4]    = {};
+  uint8_t universe       = 0;
+  bool    audioReactive  = true;
+  float   panSpeed       = 0.5f;
+  float   tiltSpeed      = 0.5f;
+  float   colorSensitivity = 1.0f;
+};
+
 struct Config {
   char               deviceName[24] = "Music-LED";
   int                micSck = 4;
@@ -40,4 +69,7 @@ struct Config {
   int                stripCount = 1;
   StripConfig        strips[kMaxStrips];
   uint8_t            masterBrightness = 255;
+  ArtNetConfig       artnet;
+  int                fixtureCount = 0;
+  FixtureConfig      fixtures[kMaxFixtures];
 };

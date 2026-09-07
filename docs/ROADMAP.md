@@ -13,6 +13,7 @@ repo; a phase is *done* when its acceptance criteria pass on hardware.
 | **6** | Conventional RGB strips | `AnalogRGBDriver` (LEDC PWM, common anode/cathode), MOSFET stage, zone→band | same engine drives 5 V RGB zones (bass/mid/treble test §37) | drivers in repo, needs bench |
 | **7** | Single-colour strips | `SingleColorDriver`, PWM brightness | mono strip pulses to beat/bass | drivers in repo |
 | **8** | Additional protocols + OTA | WS2811/WS2815/SK6812-RGBW/APA102/HD107 verified; dual-partition OTA + rollback | each chipset demo; OTA upgrade/rollback test | chipsets in driver; OTA planned |
+| **8b** | Art-Net DMX output | `ArtNetNode` (WiFi STA, UDP, ArtPoll/ArtDmx), fixture profiles (moving head / LED par), audio→DMX mapping | moving heads swing to the beat over WiFi | **code in repo, needs bench** |
 | **9** | Multi-controller | UDP-multicast `AudioFrame`, master/slave roles, clock offset, frame counter | 2+ controllers render synchronised to one master | planned |
 | **10** | Productisation | custom PCB, enclosure, connectors, protection, power dist, user manual, manufacturing notes | design-docs + BOM for production; EMC/UL notes | planned |
 

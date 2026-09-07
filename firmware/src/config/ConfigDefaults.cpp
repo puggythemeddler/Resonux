@@ -62,4 +62,13 @@ void configDefaults(Config& cfg) {
   s.targetFps = 60;
   s.sensitivity = 1.0f;
   s.hueSpeed = 8.0f;
+
+  cfg.artnet.enabled = false;
+  cfg.artnet.useDhcp = true;
+  cfg.artnet.universe = 0;
+  cfg.artnet.audioReactive = true;
+  cfg.artnet.panSpeed = 0.5f;
+  cfg.artnet.tiltSpeed = 0.5f;
+  cfg.artnet.colorSensitivity = 1.0f;
+  cfg.fixtureCount = 0;
 }

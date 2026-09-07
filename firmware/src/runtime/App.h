@@ -1,4 +1,5 @@
 #pragma once
+#include "artnet/ArtNetNode.h"
 #include "audio/AudioAnalyzer.h"
 #include "audio/AudioFrame.h"
 #include "audio/AudioSource.h"
@@ -18,6 +19,7 @@ public:
   const Config& config() const { return _config; }
   uint32_t audioFrames() const { return _framesCount; }
   float audioFps() const { return _analyzer ? _analyzer->fps() : 0.0f; }
+  const ArtNetNode* artnet() const { return _artnet; }
 
   bool takeFrame(AudioFrame& out);
 
@@ -42,6 +44,8 @@ private:
   SemaphoreHandle_t _mutex = nullptr;
   uint32_t        _framesCount = 0;
   uint32_t        _lastSeenFrame = 0;
+
+  ArtNetNode*     _artnet = nullptr;
 
   TaskHandle_t    _audioTask = nullptr;
   TaskHandle_t    _ledTask = nullptr;
