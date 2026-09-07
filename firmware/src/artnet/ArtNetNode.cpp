@@ -1,4 +1,5 @@
 #include "artnet/ArtNetNode.h"
+#include "network/WifiManager.h"
 #include "util/Log.h"
 #include <Arduino.h>
 #include <WiFi.h>
@@ -58,6 +59,15 @@ void ArtNetNode::stop() {
 }
 
 bool ArtNetNode::connectWifi() {
+  WifiManager& wifi = WifiManager::instance();
+
+  if (wifi.managed()) {
+    if (!wifi.ensureConnected()) return false;
+    _connected = true;
+    logBoot("artnet", "using shared wifi ip=%s", wifi.ip().toString().c_str());
+    return true;
+  }
+
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("resonux-artnet");
 
@@ -95,7 +105,13 @@ void ArtNetNode::taskLoop() {
   uint32_t lastDmxSend = 0;
 
   while (_running) {
-    if (WiFi.status() != WL_CONNECTED) {
+    WifiManager& wifi = WifiManager::instance();
+    if (wifi.managed()) {
+      if (!wifi.ensureConnected()) {
+        delay(1000);
+        continue;
+      }
+    } else if (WiFi.status() != WL_CONNECTED) {
       _connected = false;
       delay(1000);
       connectWifi();

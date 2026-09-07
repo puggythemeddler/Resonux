@@ -4,11 +4,14 @@
 #include "audio/AudioFrame.h"
 #include "audio/AudioSource.h"
 #include "config/Config.h"
+#include "network/WifiManager.h"
 #include "runtime/StripRuntime.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <stdint.h>
+
+class WebUi;
 
 class App {
 public:
@@ -20,6 +23,7 @@ public:
   uint32_t audioFrames() const { return _framesCount; }
   float audioFps() const { return _analyzer ? _analyzer->fps() : 0.0f; }
   const ArtNetNode* artnet() const { return _artnet; }
+  const char* wifiModeName() const { return WifiManager::instance().modeName(); }
 
   bool takeFrame(AudioFrame& out);
 
@@ -46,6 +50,7 @@ private:
   uint32_t        _lastSeenFrame = 0;
 
   ArtNetNode*     _artnet = nullptr;
+  WebUi*          _web = nullptr;
 
   TaskHandle_t    _audioTask = nullptr;
   TaskHandle_t    _ledTask = nullptr;

@@ -60,6 +60,21 @@ struct ArtNetConfig {
   float   colorSensitivity = 1.0f;
 };
 
+enum NetworkMode : int {
+  NET_AP_STA_FALLBACK = 0,  // try STA, fall back to AP hotspot
+  NET_STA_ONLY        = 1,
+  NET_AP_ONLY         = 2,
+};
+
+struct NetworkConfig {
+  bool     enabled     = true;
+  int      mode        = NET_AP_STA_FALLBACK;
+  char     apSsid[24]  = "Resonux";
+  char     apPassword[33] = "";
+  char     staSsid[33] = "";
+  char     staPassword[65] = "";
+};
+
 struct Config {
   char               deviceName[24] = "Music-LED";
   int                micSck = 4;
@@ -69,6 +84,7 @@ struct Config {
   int                stripCount = 1;
   StripConfig        strips[kMaxStrips];
   uint8_t            masterBrightness = 255;
+  NetworkConfig      net;
   ArtNetConfig       artnet;
   int                fixtureCount = 0;
   FixtureConfig      fixtures[kMaxFixtures];

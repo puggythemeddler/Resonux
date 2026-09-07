@@ -672,29 +672,33 @@ Full details: `docs/WEB_DASHBOARD.md`. Summary:
   only to the local controller.
 - **Stack:** Vite + React + TypeScript. Minimal deps (a few hooks helpers, no
   heavy UI framework) so the bundle stays small enough to embed
-  (~200–400 KB gzip target).
-- **Firmware side:** Arduino-ESP32 `WebServer`/`ESPAsyncWebServer` + `ArduinoJson`
-  exposure of the config; live audio over a single **SSE** (Server-Sent Events)
-  stream carrying `AudioFrame` snapshots at ~10–20 Hz; LED frame preview echoed
-  at a reduced rate. REST for CRUD (config/strips/presets/test/reboot). Web
-  traffic runs on its own task/core and never blocks the audio or LED tasks.
-- **Sections:** Dashboard · LED Setup · Audio · Effects · Frequency Mapping ·
-  Strips · Presets · Power · System · Diagnostics — each mapping 1:1 to a
-  router page and a config slice of the JSON.
-- **Preview:** an HTML-canvas strip renderer; in `preview` mode the firmware
-  streams the actual rendered frame (or the file simulator on a desktop) so the
-  dashboard shows a true preview, not a guess.
+  (~200–400 KB gzip target). **Implemented** — see `docs/WEB_DASHBOARD.md`;
+  build outputs to `firmware/data/web`.
+- **Firmware side:** Arduino-ESP32 `WebServer` + `ArduinoJson` exposure of the
+  config; live audio over short-interval `GET /api/frame` polling (SSE planned
+  later) carrying `AudioFrame` snapshots; REST for status/frame/config/reboot
+  and OTA. Web traffic runs on its own task/core and never blocks the audio or
+  LED tasks.
+- **Sections (built):** Live · Configuration · Firmware Update. Future pages:
+  LED Setup, Audio, Effects, Frequency Mapping, Strips, Presets, Power,
+  System, Diagnostics.
+- **Preview:** future HTML-canvas strip renderer using the streamed frame.
 
 ---
 
-## 20. OTA updates (Phase ≥ 8)
+## 20. OTA updates (implemented)
 
-- Arduino-OTA + `Update.h`, served from the System page (upload `.bin`);
-  rollback via an OTA-partition scheme: two app partitions, a factory partition,
-  and a "verify boot" flag set after first boot of the new image.
-- OTA is enabled only after the core is stable; the update endpoint requires the
-  admin token and validates size/hash and config compatibility after reboot
-  (config migrator runs before the web UI unlocks).
+- **Two methods, both active:**
+  - **HTTP** — `POST /api/ota` in the dashboard uploads a `firmware.bin`
+    (streamed into the inactive app partition via `Update.h`, then reboots).
+  - **ArduinoOTA** — standard ArduinoOTA on hostname `resonux`, so you can
+    flash from Arduino IDE / `pio run -t upload` over Wi-Fi.
+- **Partition scheme:** `firmware/partitions_ota.csv` — `app0`/`app1` OTA
+  partitions (3.5 MB each), `otadata`, NVS, and a 960 KB SPIFFS holding the
+  dashboard + config. Boot proceeds normally; marking the new image valid and
+  rollback-on-failure is handled by the ESP-IDF OTA machinery.
+- **Hardening (future):** admin token + size/hash validation + config
+  compatibility gate before unlocking — add after bench bring-up.
 
 ---
 

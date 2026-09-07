@@ -4,6 +4,7 @@
 #include "config/ConfigStore.h"
 #include "effects/EffectRegistry.h"
 #include "util/Log.h"
+#include "web/WebUi.h"
 #include <Arduino.h>
 
 App& App::instance() {
@@ -20,6 +21,23 @@ bool App::begin() {
   bool loaded = ConfigStore::load(_config);
   logBoot("cfg", "config %s", loaded ? "loaded" : "defaults applied");
   if (!loaded) ConfigStore::save(_config);
+
+  WifiManager& wifi = WifiManager::instance();
+  if (wifi.begin(_config.net)) {
+    logBoot("wifi", "mode=%s ip=%s", wifi.modeName(),
+            wifi.ip().toString().c_str());
+  } else {
+    logBoot("wifi", "disabled (%s)", wifi.lastError());
+  }
+
+  _web = new WebUi();
+  if (_web->begin(*this)) {
+    logBoot("web", "dashboard + OTA up");
+  } else {
+    logBoot("web", "init FAILED");
+    delete _web;
+    _web = nullptr;
+  }
 
   MicPins mic = {_config.micSck, _config.micWs, _config.micData};
   _source = new I2SMicSource(mic, _config.audio.sampleRate);

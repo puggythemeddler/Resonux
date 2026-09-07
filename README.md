@@ -110,10 +110,37 @@ pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
 
-First run creates WiFi-less defaults matching the wiring above. Change them
-in `firmware/data/config.json` and upload with `pio run -t uploadfs`.
+Build + embed the web dashboard (only needed the first time, or after editing
+`web/`):
+
+```bash
+cd web
+npm install
+npm run build                    # outputs firmware/data/web (flashed to SPIFFS)
+cd ../firmware
+pio run -t uploadfs              # flash the dashboard + config.json
+```
+
+First run creates **AP-mode** defaults (`Resonux` hotspot, no password). Join
+it from a phone/PC and browse to `http://192.168.4.1/` for the dashboard, or
+set `net.staSsid`/`net.staPassword` in `firmware/data/config.json` to join
+your own network (STA mode) and browse to `http://<ESP-ip>/`.
 `platformio.ini` pins Arduino core 2.0.x (proven INMP441 path on S3) and
-FastLED **3.9.0** (compile-time pins — see the addressable note above).
+FastLED **3.9.0** (compile-time pins — see the addressable note above). The
+build uses a **dual-partition OTA table** and the flash filesystem is SPIFFS.
+
+### Web dashboard
+
+A modern React dashboard served from the device — no cloud. Open `http://<ESP-ip>/`
+from any device on the same network:
+
+- **Live** — real-time spectrum bars, amplitude/bass/mid/treble levels,
+  beat indicator, system stats (uptime, heap, FPS), global tuning sliders.
+- **Configuration** — view/edit the full `config.json` and save (reboots).
+- **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
+  from the Arduino IDE (ArduinoOTA is active too).
+
+See `docs/WEB_DASHBOARD.md`.
 
 ### Art-Net (moving heads)
 
@@ -144,10 +171,11 @@ analysis; no DMX transceiver is required (Art-Net is sent over WiFi). See
 
 ## Configure
 
-Persistent JSON on LittleFS, validated + clamped at load. The web dashboard
-(Phase 4) will edit it from the browser; values also take effect from
-`pio device monitor` — Serial console prints a short `[diag]` line every 3 s
-(fps, amplitude, bass/mid/treble, beat, free heap).
+Persistent JSON on SPIFFS (LittleFS-like) at `/config.json`, validated +
+clamped at load. Edit it in the browser dashboard (**Configuration** tab →
+**Save & reboot**), or directly in `firmware/data/config.json` + `uploadfs`.
+Serial console prints a short `[diag]` line every 3 s (fps, amplitude,
+bass/mid/treble, beat, free heap).
 
 ## Testing & tooling
 

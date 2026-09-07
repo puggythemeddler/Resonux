@@ -71,4 +71,11 @@ void configDefaults(Config& cfg) {
   cfg.artnet.tiltSpeed = 0.5f;
   cfg.artnet.colorSensitivity = 1.0f;
   cfg.fixtureCount = 0;
+
+  cfg.net.enabled = true;
+  cfg.net.mode = NET_AP_STA_FALLBACK;
+  strncpy(cfg.net.apSsid, "Resonux", sizeof(cfg.net.apSsid) - 1);
+  cfg.net.apPassword[0] = '\0';
+  cfg.net.staSsid[0] = '\0';
+  cfg.net.staPassword[0] = '\0';
 }

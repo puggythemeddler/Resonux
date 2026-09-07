@@ -67,6 +67,14 @@
       ]
     }
   ],
+  "net": {
+    "enabled": true,
+    "mode": 0,
+    "apSsid": "Resonux",
+    "apPassword": "",
+    "staSsid": "",
+    "staPassword": ""
+  },
   "artnet": {
     "enabled": false,
     "ssid": "",

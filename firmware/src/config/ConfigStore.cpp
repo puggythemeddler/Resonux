@@ -180,6 +180,20 @@ bool ConfigStore::load(Config& cfg) {
     }
   }
 
+  JsonObject nw = doc["net"].as<JsonObject>();
+  if (!nw.isNull()) {
+    cfg.net.enabled = nw["enabled"] | cfg.net.enabled;
+    cfg.net.mode = clampInt(nw["mode"] | cfg.net.mode, 0, 2);
+    strncpy(cfg.net.apSsid, nw["apSsid"] | cfg.net.apSsid,
+            sizeof(cfg.net.apSsid) - 1);
+    strncpy(cfg.net.apPassword, nw["apPassword"] | cfg.net.apPassword,
+            sizeof(cfg.net.apPassword) - 1);
+    strncpy(cfg.net.staSsid, nw["staSsid"] | cfg.net.staSsid,
+            sizeof(cfg.net.staSsid) - 1);
+    strncpy(cfg.net.staPassword, nw["staPassword"] | cfg.net.staPassword,
+            sizeof(cfg.net.staPassword) - 1);
+  }
+
   JsonObject an = doc["artnet"].as<JsonObject>();
   if (!an.isNull()) {
     cfg.artnet.enabled = an["enabled"] | cfg.artnet.enabled;
@@ -224,8 +238,7 @@ bool ConfigStore::load(Config& cfg) {
   return true;
 }
 
-bool ConfigStore::save(const Config& cfg) {
-  JsonDocument doc;
+void buildDoc(const Config& cfg, JsonDocument& doc) {
   doc["version"] = kConfigVersion;
   doc["deviceName"] = cfg.deviceName;
   doc["masterBrightness"] = cfg.masterBrightness;
@@ -267,6 +280,14 @@ bool ConfigStore::save(const Config& cfg) {
     serializeStrip(s, cfg.strips[i]);
   }
 
+  JsonObject nw = doc["net"].to<JsonObject>();
+  nw["enabled"] = cfg.net.enabled;
+  nw["mode"] = cfg.net.mode;
+  nw["apSsid"] = cfg.net.apSsid;
+  nw["apPassword"] = cfg.net.apPassword;
+  nw["staSsid"] = cfg.net.staSsid;
+  nw["staPassword"] = cfg.net.staPassword;
+
   JsonObject an = doc["artnet"].to<JsonObject>();
   an["enabled"] = cfg.artnet.enabled;
   an["ssid"] = cfg.artnet.ssid;
@@ -291,6 +312,11 @@ bool ConfigStore::save(const Config& cfg) {
     fx["dmxAddress"] = cfg.fixtures[i].dmxAddress;
     fx["count"] = cfg.fixtures[i].count;
   }
+}
+
+bool ConfigStore::save(const Config& cfg) {
+  JsonDocument doc;
+  buildDoc(cfg, doc);
 
   File f = LittleFS.open(kConfigPath, "w");
   if (!f) return false;
@@ -299,12 +325,17 @@ bool ConfigStore::save(const Config& cfg) {
   return w > 0;
 }
 
+String ConfigStore::dumpString(const Config& cfg) {
+  JsonDocument doc;
+  buildDoc(cfg, doc);
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
 void ConfigStore::printToSerial(const Config& cfg) {
   JsonDocument doc;
-  doc["version"] = kConfigVersion;
-  doc["deviceName"] = cfg.deviceName;
-  doc["masterBrightness"] = cfg.masterBrightness;
-  doc["stripCount"] = cfg.stripCount;
+  buildDoc(cfg, doc);
   serializeJson(doc, Serial);
   Serial.println();
 }

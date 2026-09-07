@@ -1,5 +1,11 @@
 # Web Dashboard Architecture — TypeScript + React
 
+Status: **implemented in `web/`** — Vite + React + TS SPA, embedded into
+`firmware/data/web/` and served by `src/web/WebUi` on the device. Live,
+Configuration, and Firmware Update tabs are working. Uses short-interval
+`fetch` polling of `/api/frame` for the live spectrum (SSE remains a future
+optimization).
+
 Served locally by the ESP32. No cloud account, no external CDN, works fully
 offline on the controller's own Wi-Fi AP.
 
@@ -22,16 +28,14 @@ so it embeds into LittleFS and loads instantly on the AP network.
 
 ```
    dev:  Vite dev server ──┐
-                           ├──► browser   (proxy /api + /stream → ESP32 IP:80)
-   prod: npm run build ──► firmware/data/web.zip ──► LittleFS
-         ESP32 serves static assets + REST + SSE on :80
+                           ├──► browser   (proxy /api → ESP32 IP:80)
+   prod: npm run build ──► firmware/data/web/ ──► SPIFFS (uploadfs)
+         ESP32 serves static assets + REST on :80
 ```
 
-- Firmware exposes exactly one origin (`http://<esp-ip>/`). Dev uses a Vite
-  proxy (`/api`, `/stream`) to that origin.
-- `web/` has `src/services/config.ts`, `src/services/live.ts`, `src/api/types.ts`
-  — types mirror the firmware JSON schema (single source of truth documented in
-  `docs/ARCHITECTURE.md §13/§19`).
+- Firmware exposes exactly one origin (`http://<esp-ip>/`).
+- Build outputs to `firmware/data/web` so `pio run -t uploadfs` flashes it
+  to the SPIFFS partition alongside `config.json`.
 
 ## 3. Firmware API surface (tentative, Phase 4)
 
