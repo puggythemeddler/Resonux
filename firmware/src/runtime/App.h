@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 class WebUi;
+class SyncNode;
 
 class App {
 public:
@@ -24,6 +25,7 @@ public:
   uint32_t audioFrames() const { return _framesCount; }
   float audioFps() const { return _analyzer ? _analyzer->fps() : 0.0f; }
   const ArtNetNode* artnet() const { return _artnet; }
+  const SyncNode* sync() const { return _sync; }
   const char* wifiModeName() const { return WifiManager::instance().modeName(); }
 
   bool takeFrame(AudioFrame& out);
@@ -40,6 +42,7 @@ private:
   void buildStrips();
   void audioLoop();
   void ledLoop();
+  void injectRemoteFrame(const AudioFrame& f);
 
   static void audioTaskEntry(void* arg);
   static void ledTaskEntry(void* arg);
@@ -56,6 +59,7 @@ private:
   uint32_t        _lastSeenFrame = 0;
 
   ArtNetNode*     _artnet = nullptr;
+  SyncNode*       _sync = nullptr;
   WebUi*          _web = nullptr;
 
   TaskHandle_t    _audioTask = nullptr;

@@ -3,6 +3,7 @@
 #include "config/ConfigDefaults.h"
 #include "config/ConfigStore.h"
 #include "effects/EffectRegistry.h"
+#include "sync/SyncNode.h"
 #include "theme/ThemeEngine.h"
 #include "ui/TouchUi.h"
 #include "util/Log.h"
@@ -58,19 +59,25 @@ bool App::begin() {
     _web = nullptr;
   }
 
-  MicPins mic = {_config.micSck, _config.micWs, _config.micData};
-  _source = new I2SMicSource(mic, _config.audio.sampleRate);
-  if (!_source || !_source->begin()) {
-    logBoot("audio", "I2S microphone init FAILED");
+  const bool slaveRole =
+      _config.sync.enabled && _config.sync.role == SYNC_SLAVE;
+  if (slaveRole) {
+    logBoot("audio", "mic skipped (sync slave - frames arrive over network)");
   } else {
-    logBoot("audio", "mic ready: %s @ %.0f Hz", _source->name(),
-            _source->sampleRate());
-  }
+    MicPins mic = {_config.micSck, _config.micWs, _config.micData};
+    _source = new I2SMicSource(mic, _config.audio.sampleRate);
+    if (!_source || !_source->begin()) {
+      logBoot("audio", "I2S microphone init FAILED");
+    } else {
+      logBoot("audio", "mic ready: %s @ %.0f Hz", _source->name(),
+              _source->sampleRate());
+    }
 
-  _analyzer = new AudioAnalyzer(_config.audio, _source);
-  if (!_analyzer->begin()) {
-    logBoot("audio", "analyzer init FAILED");
-    return false;
+    _analyzer = new AudioAnalyzer(_config.audio, _source);
+    if (!_analyzer->begin()) {
+      logBoot("audio", "analyzer init FAILED");
+      return false;
+    }
   }
 
   buildStrips();
@@ -89,6 +96,18 @@ bool App::begin() {
 
   _mutex = xSemaphoreCreateMutex();
   if (!_mutex) return false;
+
+  if (_config.sync.enabled && _config.sync.role != SYNC_OFF) {
+    _sync = new SyncNode();
+    if (_sync->begin(
+            _config.sync, [this](const AudioFrame& f) { injectRemoteFrame(f); })) {
+      logBoot("sync", "node active (%s)", _sync->roleName());
+    } else {
+      logBoot("sync", "init FAILED or disabled");
+      delete _sync;
+      _sync = nullptr;
+    }
+  }
 
   xTaskCreatePinnedToCore(App::audioTaskEntry, "audio", 4096, this, 24,
                           &_audioTask, 1);
@@ -124,6 +143,14 @@ bool App::takeFrame(AudioFrame& out) {
   return true;
 }
 
+void App::injectRemoteFrame(const AudioFrame& f) {
+  if (!_mutex) return;
+  if (!xSemaphoreTake(_mutex, pdMS_TO_TICKS(5))) return;
+  _frameStorage = f;
+  ++_framesCount;
+  xSemaphoreGive(_mutex);
+}
+
 bool App::setMasterBrightness(uint8_t value) {
   _config.masterBrightness = value;
   return ConfigStore::save(_config);
@@ -145,6 +172,11 @@ bool App::setTheme(const char* id) {
 }
 
 void App::audioLoop() {
+  // Slaves render from the network-multicast frame; the mic pipeline idles.
+  if (_sync && _sync->role() == SYNC_SLAVE) {
+    vTaskDelay(20);
+    return;
+  }
   _analyzer->process(millis());
   uint32_t fc = _analyzer->frameCount();
   if (fc != _lastSeenFrame) {
@@ -155,6 +187,7 @@ void App::audioLoop() {
       _framesCount = fc;
       xSemaphoreGive(_mutex);
     }
+    if (_sync) _sync->publishFrame(f);
     if (_artnet) _artnet->setAudioFrame(f);
     _lastSeenFrame = fc;
   }
@@ -195,9 +228,17 @@ void App::ledLoop() {
   if (now - lastDiag >= 3000) {
     lastDiag = now;
     Serial.printf(
-        "[diag] fps=%.0f amp=%.2f bass=%.2f mid=%.2f treble=%.2f beat=%d %.2f heap=%u\n",
+        "[diag] fps=%.0f amp=%.2f bass=%.2f mid=%.2f treble=%.2f beat=%d %.2f heap=%u",
         _analyzer ? _analyzer->fps() : 0.0f, f.amplitude, f.bass, f.mid,
         f.treble, f.beat ? 1 : 0, f.beatStrength, (unsigned)ESP.getFreeHeap());
+    if (_sync) {
+      Serial.printf(" sync=%s", _sync->roleName());
+      if (_sync->role() == SYNC_SLAVE) {
+        Serial.printf(" seq=%u off=%ldms alive=%d", _sync->seq(),
+                      (long)_sync->clockOffsetMs(), _sync->masterAlive() ? 1 : 0);
+      }
+    }
+    Serial.println();
   }
   vTaskDelay(1);
 }

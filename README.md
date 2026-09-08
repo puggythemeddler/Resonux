@@ -66,6 +66,10 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   pars over WiFi (no extra hardware). Audio-reactive: pan/tilt swing on
   amplitude + bass, color from bass/beat, strobe on beat. See
   `docs/ARTNET.md`.
+- **Multi-controller sync** — optional UDP-multicast audio sync: one *master*
+  runs the mic and broadcasts its analysis; *slaves* (no mic needed) render
+  the identical frame with clock-offset + frame-counter lock, so whole rooms
+  of strips stay beat-locked over plain WiFi. See `docs/MULTI_CONTROLLER.md`.
 
 See `docs/ARCHITECTURE.md` for the full design.
 
@@ -119,7 +123,7 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 cd firmware
 pio run                          # compile default sizing (no touchscreen)
 pio run -e esp32-s3-ui           # build with LVGL touchscreen UI
-pio test -e native               # host-side unit tests (no hardware, ~21 tests)
+pio test -e native               # host-side unit tests (no hardware, 37 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
@@ -234,6 +238,7 @@ bass/mid/treble, beat, free heap).
 - `docs/TESTING.md` — test strategy & tools
 - `docs/WEB_DASHBOARD.md` — Phase 4 dashboard spec
 - `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
+- `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
 - `docs/ROADMAP.md` — phase plan & status
 
 ## Status
@@ -243,11 +248,12 @@ incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
 drivers + runtime) plus Art-Net DMX output, the **web dashboard** (Live /
 Themes / Configuration / OTA tabs), **18 themes** (data-driven, device-side +
 dashboard editing incl. Afro House + Auto classifier), **OTA**,
-**WifiManager**, **host-side unit tests in CI**, and the **LVGL touchscreen
-UI** (hardware-independent display/touch abstraction) are implemented and
-compile cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the default config,
-~64 % flash with the touchscreen env); hardware bring-up is pending parts
-arrival (see `docs/HARDWARE.md`).
+**WifiManager**, **multi-controller multicast sync** (master/slave +
+clock-offset lock), **host-side unit tests in CI** (37 pass), and the
+**LVGL touchscreen UI** (hardware-independent display/touch abstraction) are
+implemented and compile cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the
+default config, ~64 % flash with the touchscreen env); hardware bring-up is
+pending parts arrival (see `docs/HARDWARE.md`).
 
 ## License / ownership
 

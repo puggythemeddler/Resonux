@@ -3,6 +3,7 @@
 #include "config/ConfigStore.h"
 #include "network/WifiManager.h"
 #include "runtime/App.h"
+#include "sync/SyncNode.h"
 #include "theme/ThemeEngine.h"
 #include "util/Log.h"
 #include <Arduino.h>
@@ -154,6 +155,19 @@ void WebUi::sendStatus() {
   w["mode"] = wifi.modeName();
   w["ip"] = wifi.ip().toString();
   w["connected"] = wifi.connected();
+
+  JsonObject sy = doc["sync"].to<JsonObject>();
+  sy["enabled"] = _app->config().sync.enabled;
+  sy["role"] = _app->sync() ? _app->sync()->roleName() : "off";
+  if (_app->sync() && _app->sync()->enabled()) {
+    sy["seq"] = _app->sync()->seq();
+    sy["offsetMs"] = _app->sync()->clockOffsetMs();
+    sy["group"] = _app->config().sync.group;
+    sy["port"] = _app->config().sync.port;
+    if (_app->sync()->role() == SYNC_SLAVE) {
+      sy["masterAlive"] = _app->sync()->masterAlive();
+    }
+  }
 
   JsonObject cn = doc["artnet"].to<JsonObject>();
   cn["enabled"] = _app->config().artnet.enabled;

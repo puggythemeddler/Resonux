@@ -72,6 +72,14 @@ void configDefaults(Config& cfg) {
   cfg.artnet.colorSensitivity = 1.0f;
   cfg.fixtureCount = 0;
 
+  SyncConfig& sc = cfg.sync;
+  sc.enabled = false;
+  sc.role = SYNC_OFF;
+  strncpy(sc.group, "239.255.42.9", sizeof(sc.group) - 1);
+  sc.port = 9769;
+  sc.heartbeatMs = 32;
+  sc.timeoutMs = 600;
+
   cfg.net.enabled = true;
   cfg.net.mode = NET_AP_STA_FALLBACK;
   strncpy(cfg.net.apSsid, "Resonux", sizeof(cfg.net.apSsid) - 1);

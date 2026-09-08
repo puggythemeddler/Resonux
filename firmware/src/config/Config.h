@@ -69,6 +69,21 @@ enum NetworkMode : int {
   NET_AP_ONLY         = 2,
 };
 
+enum SyncRole : int {
+  SYNC_OFF    = 0,
+  SYNC_MASTER = 1,
+  SYNC_SLAVE  = 2,
+};
+
+struct SyncConfig {
+  bool     enabled     = false;
+  int      role        = SYNC_OFF;
+  char     group[16]   = "239.255.42.9";  // multicast group for AudioFrame sync
+  uint16_t port        = 9769;
+  uint16_t heartbeatMs = 32;   // master broadcast period (~31 Hz)
+  uint16_t timeoutMs   = 600;  // slave drops master after this silence
+};
+
 struct NetworkConfig {
   bool     enabled     = true;
   int      mode        = NET_AP_STA_FALLBACK;
@@ -90,6 +105,7 @@ struct Config {
   uint8_t            masterBrightness = 255;
   NetworkConfig      net;
   ArtNetConfig       artnet;
+  SyncConfig         sync;
   DisplayConfig      display;
   int                fixtureCount = 0;
   FixtureConfig      fixtures[kMaxFixtures];

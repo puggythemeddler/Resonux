@@ -164,6 +164,24 @@ void deserializeDisplay(JsonObject d, DisplayConfig& c) {
   c.uiFps = clampInt(d["uiFps"] | c.uiFps, 5, 120);
 }
 
+void serializeSync(JsonObject s, const SyncConfig& c) {
+  s["enabled"] = c.enabled;
+  s["role"] = c.role;
+  s["group"] = c.group;
+  s["port"] = c.port;
+  s["heartbeatMs"] = c.heartbeatMs;
+  s["timeoutMs"] = c.timeoutMs;
+}
+
+void deserializeSync(JsonObject s, SyncConfig& c) {
+  c.enabled = s["enabled"] | c.enabled;
+  c.role = clampInt(s["role"] | c.role, 0, 2);
+  strncpy(c.group, s["group"] | c.group, sizeof(c.group) - 1);
+  c.port = clampInt(s["port"] | c.port, 1024, 65535);
+  c.heartbeatMs = clampInt(s["heartbeatMs"] | c.heartbeatMs, 10, 1000);
+  c.timeoutMs = clampInt(s["timeoutMs"] | c.timeoutMs, 100, 10000);
+}
+
 }  // namespace
 
 bool ConfigStore::begin() {
@@ -288,6 +306,11 @@ bool ConfigStore::load(Config& cfg) {
     deserializeDisplay(disp, cfg.display);
   }
 
+  JsonObject sy = doc["sync"].as<JsonObject>();
+  if (!sy.isNull()) {
+    deserializeSync(sy, cfg.sync);
+  }
+
   if (doc["fixtures"].is<JsonArray>()) {
     JsonArray fixes = doc["fixtures"].as<JsonArray>();
     cfg.fixtureCount =
@@ -374,6 +397,9 @@ void buildDoc(const Config& cfg, JsonDocument& doc) {
 
   JsonObject disp = doc["display"].to<JsonObject>();
   serializeDisplay(disp, cfg.display);
+
+  JsonObject sy = doc["sync"].to<JsonObject>();
+  serializeSync(sy, cfg.sync);
 
   JsonArray fixes = doc["fixtures"].to<JsonArray>();
   for (int i = 0; i < cfg.fixtureCount; ++i) {
