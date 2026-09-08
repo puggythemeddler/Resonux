@@ -30,7 +30,7 @@ inline Rgb effRgb(const EffectParams& p, float h01, float s, float l,
 
 inline float effHueOffset(const EffectParams& p, float tSec) {
   return (p.startHue / 360.0f) + p.themeHueOffset +
-         fmodf(p.hueSpeed * (0.35f + 0.9f * p.themeMovement) * tSec, 360.0f) /
+         fmodf(p.hueSpeed * (0.1f + 0.9f * p.themeMovement) * tSec, 360.0f) /
              360.0f;
 }
 

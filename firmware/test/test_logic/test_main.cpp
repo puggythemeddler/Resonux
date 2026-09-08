@@ -134,6 +134,88 @@ void test_eff_hue_offset_wraps() {
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, h);
 }
 
+// Theme-injection contract: at neutral defaults the old stateless behaviour
+// must be recovered exactly.
+void test_eff_level_neutral_default() {
+  EffectParams p;  // themeEnergy = 0.5, sensitivity = 1.0
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.3f, effLevel(p, 0.3f));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1.0f, effLevel(p, 1.5f));
+}
+
+void test_eff_hue_movement_neutral_equals_legacy() {
+  EffectParams p;  // themeMovement = 1.0, themeHueOffset = 0
+  p.startHue = 60;
+  p.hueSpeed = 180.0f;
+  float legacy = (60.0f / 360.0f) + fmodf(180.0f * 0.5f, 360.0f) / 360.0f;
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, legacy, effHueOffset(p, 0.5f));
+}
+
+void test_eff_hue_movement_scales_speed() {
+  EffectParams p;
+  p.startHue = 0;
+  p.hueSpeed = 36.0f;
+  p.themeMovement = 1.0f;
+  float full = effHueOffset(p, 1.0f);
+  p.themeMovement = 0.0f;
+  float slow = effHueOffset(p, 1.0f);
+  // 36 deg at full speed vs 3.6 deg at the slow floor
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.1f, full);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.01f, slow);
+  TEST_ASSERT(slow < full);
+}
+
+void test_eff_rgb_theme_hue_offset_shifts_color() {
+  EffectParams p;
+  p.themeHueOffset = 0.5f;
+  Rgb c = effRgb(p, 0.0f, 1.0f, 0.5f, 1.0f);
+  // hue 0 (red) + 0.5 wraps to cyan (fixed-point rounding on channels)
+  TEST_ASSERT(c.r < 32);
+  TEST_ASSERT(c.g > 200);
+  TEST_ASSERT(c.b > 200);
+}
+
+void test_eff_rgb_theme_brightness_dims() {
+  EffectParams p;
+  p.maxBrightness = 100;
+  Rgb base = effRgb(p, 0.0f, 0.0f, 1.0f, 1.0f);
+  p.themeBright = 0.4f;
+  Rgb dim = effRgb(p, 0.0f, 0.0f, 1.0f, 1.0f);
+  TEST_ASSERT(luma(dim) < luma(base));
+}
+
+void test_eff_rgb_theme_pulse_swells() {
+  EffectParams p;
+  p.maxBrightness = 100;
+  Rgb base = effRgb(p, 0.0f, 0.0f, 1.0f, 1.0f);
+  p.themePulse = 1.0f;
+  p.themeBeat = 1.0f;
+  Rgb beat = effRgb(p, 0.0f, 0.0f, 1.0f, 1.0f);
+  TEST_ASSERT(luma(beat) > luma(base));
+}
+
+void test_theme_color_uses_theme_palette() {
+  EffectParams p;
+  Rgb pal[2] = {{200, 10, 10}, {10, 200, 10}};
+  p.themePalette = pal;
+  p.themePaletteCount = 2;
+  Rgb lo = themeColor(p, 0.0f);
+  Rgb hi = themeColor(p, 1.0f);
+  TEST_ASSERT_EQUAL_UINT8(200, lo.r);
+  TEST_ASSERT_EQUAL_UINT8(10, lo.g);
+  TEST_ASSERT_EQUAL_UINT8(10, hi.r);
+  TEST_ASSERT_EQUAL_UINT8(200, hi.g);
+}
+
+void test_theme_color_falls_back_to_strip_palette() {
+  EffectParams p;
+  p.palette = PALETTE_RAINBOW;
+  Rgb a = themeColor(p, 0.0f);
+  Rgb b = themeColor(p, 1.0f);
+  TEST_ASSERT_EQUAL_UINT8(a.r, b.r);
+  TEST_ASSERT_EQUAL_UINT8(a.g, b.g);
+  TEST_ASSERT_EQUAL_UINT8(a.b, b.b);
+}
+
 // ------------------------------------------------------------------ LedFrame
 void test_ledframe_clear_and_set() {
   LedFrame f(10);
@@ -243,6 +325,14 @@ int main(int argc, char** argv) {
   RUN_TEST(test_eff_level_clamps);
   RUN_TEST(test_eff_rgb_brightness_range);
   RUN_TEST(test_eff_hue_offset_wraps);
+  RUN_TEST(test_eff_level_neutral_default);
+  RUN_TEST(test_eff_hue_movement_neutral_equals_legacy);
+  RUN_TEST(test_eff_hue_movement_scales_speed);
+  RUN_TEST(test_eff_rgb_theme_hue_offset_shifts_color);
+  RUN_TEST(test_eff_rgb_theme_brightness_dims);
+  RUN_TEST(test_eff_rgb_theme_pulse_swells);
+  RUN_TEST(test_theme_color_uses_theme_palette);
+  RUN_TEST(test_theme_color_falls_back_to_strip_palette);
   RUN_TEST(test_ledframe_clear_and_set);
   RUN_TEST(test_ledframe_index_clamps);
   RUN_TEST(test_bass_pulse_fill_color_on_beat);
