@@ -9,6 +9,7 @@ type Status = {
   stripCount: number
   wifi: { mode: string; ip: string; connected: boolean }
   artnet: { enabled: boolean; fixtures: number; status: string }
+  sync: { enabled: boolean; role: string; seq?: number; offsetMs?: number; masterAlive?: boolean }
 }
 
 type Frame = {
@@ -498,6 +499,24 @@ export default function App() {
 
   const g = (accessor: (s: Status) => string) => (online && status ? accessor(status) : '—')
 
+  const syncBadgeClass = () => {
+    if (!online || !status) return 'badge offline'
+    const s = status.sync
+    if (!s.enabled) return 'badge'
+    if (s.role === 'slave' && s.masterAlive === false) return 'badge sync-lost'
+    return `badge sync-${s.role}`
+  }
+
+  const syncText = (s: Status) => {
+    if (!s.sync.enabled) return 'sync off'
+    if (s.sync.role === 'slave') {
+      return s.sync.masterAlive === false
+        ? 'sync slave · master lost'
+        : `sync slave · +${s.sync.offsetMs ?? 0} ms`
+    }
+    return `sync ${s.sync.role}`
+  }
+
   return (
     <div className="app">
       <header>
@@ -513,6 +532,7 @@ export default function App() {
           <span className="badge">{g((s) => s.wifi.mode)}</span>
           <span className="badge">{g((s) => s.wifi.ip)}</span>
           <span className="badge">{g((s) => `art-net ${s.artnet.status}`)}</span>
+          <span className={syncBadgeClass()}>{g(syncText)}</span>
         </div>
       </header>
 
@@ -552,6 +572,7 @@ export default function App() {
               <div className="stat"><div className="val">{g((s) => fmt(s.uptimeMs))}</div><div className="lbl">Uptime</div></div>
               <div className="stat"><div className="val">{(online && status ? (status.heap / 1024).toFixed(0) : '—')}</div><div className="lbl">Heap KB</div></div>
               <div className="stat"><div className="val">{g((s) => String(s.stripCount))}</div><div className="lbl">Strips</div></div>
+              <div className="stat"><div className="val">{g((s) => (s.sync.enabled ? (s.sync.role === 'slave' ? (s.sync.masterAlive === false ? 'lost' : `+${s.sync.offsetMs ?? 0} ms`) : s.sync.role) : 'off'))}</div><div className="lbl">Sync</div></div>
             </div>
           </div>
 

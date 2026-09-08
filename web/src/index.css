@@ -48,6 +48,9 @@ header {
 }
 .badge.online { color: #04120a; background: var(--green); border-color: var(--green); font-weight: 700; }
 .badge.offline { color: var(--red); border-color: var(--red); }
+.badge.sync-master { color: var(--green); border-color: var(--green); font-weight: 600; }
+.badge.sync-slave { color: var(--accent); border-color: var(--accent); }
+.badge.sync-lost { color: var(--red); border-color: var(--red); font-weight: 600; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 .card {

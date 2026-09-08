@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'firmware/**'
+      - 'web/**'
       - '.github/workflows/build.yml'
   pull_request:
     paths:
       - 'firmware/**'
+      - 'web/**'
 
 jobs:
   build:
@@ -27,8 +29,12 @@ jobs:
         run: pio test -e native
         working-directory: firmware
 
-      - name: Build
-        run: pio run
+      - name: Build (default)
+        run: pio run -e esp32-s3
+        working-directory: firmware
+
+      - name: Build (touchscreen UI)
+        run: pio run -e esp32-s3-ui
         working-directory: firmware
 
       - uses: actions/upload-artifact@v4
@@ -36,3 +42,33 @@ jobs:
           name: firmware-bin
           path: firmware/.pio/build/esp32-s3/firmware.bin
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bin-ui
+          path: firmware/.pio/build/esp32-s3-ui/firmware.bin
+          if-no-files-found: error
+
+  web:
+    name: Web dashboard (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: web
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web

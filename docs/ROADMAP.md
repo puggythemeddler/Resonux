@@ -23,6 +23,8 @@ repo; a phase is *done* when its acceptance criteria pass on hardware.
 
 1. Phase-1 bench bring-up: build firmware → flash S3 → serial VU/band stats →
    WS2812B 60 LEDs → verify Spectrum + Bass Pulse against a phone playlist.
+   Ordered checklist in `docs/BENCH.md` (all phases covered, incl. Ph 9 sync
+   and Ph 10 carrier hand-off).
 2. While hardware is on order: host-test effects + Python lab cross-validation.
 3. Then Phase 2 polish → Phase 3 → Phase 4 (the biggest single software chunk).
 

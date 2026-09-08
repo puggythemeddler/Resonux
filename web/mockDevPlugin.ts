@@ -276,6 +276,7 @@ export default function mockDevPlugin(): Plugin {
   let masterBrightness = (DEFAULT_CONFIG.masterBrightness as number) ?? 255
   let stripEffects = [0]
   let stripThemes: string[] = []
+  let syncSeq = 0
 
   return {
     name: 'resonux-mock-api',
@@ -294,6 +295,13 @@ export default function mockDevPlugin(): Plugin {
             stripCount: 1,
             wifi: { mode: 'AP+STA', ip: '192.168.4.1', connected: true },
             artnet: { enabled: false, fixtures: 0, status: 'idle' },
+            sync: {
+              enabled: true,
+              role: 'slave',
+              seq: ++syncSeq,
+              offsetMs: 50 + Math.floor(Math.random() * 300),
+              masterAlive: true,
+            },
           })
           return
         }

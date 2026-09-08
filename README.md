@@ -240,6 +240,7 @@ bass/mid/treble, beat, free heap).
 - `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
 - `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
 - `docs/PRODUCTISATION.md` — carrier PCB + enclosure + CE (Phase 10)
+- `docs/BENCH.md` — hardware bring-up checklist (turnkey steps when parts land)
 - `docs/ROADMAP.md` — phase plan & status
 
 ## Status
