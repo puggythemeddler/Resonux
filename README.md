@@ -239,6 +239,7 @@ bass/mid/treble, beat, free heap).
 - `docs/WEB_DASHBOARD.md` — Phase 4 dashboard spec
 - `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
 - `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
+- `docs/PRODUCTISATION.md` — carrier PCB + enclosure + CE (Phase 10)
 - `docs/ROADMAP.md` — phase plan & status
 
 ## Status

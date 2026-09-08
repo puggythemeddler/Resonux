@@ -47,3 +47,23 @@ Jumper wires, solder, fuse holders + blade fuses (inline 3 A/5 A), wire spool
 - USB-C cable, multimeter (current clamp optional), bench PSU optional,
   soldering iron (later phases).
 - Free: PlatformIO + VSCode, git.
+
+## Phase 10 add-on - carrier PCB + enclosure + CE kit (production splice)
+
+Prices representative; fab quotes vary. See `docs/PRODUCTISATION.md` for the
+full design doc.
+
+| Qty | Item | Example | Notes |
+|---|---|---|---|
+| 5 pcs | Carrier PCB | 65x55 mm 2-layer FR4, 2 oz | JLCPCB-class; any colour |  (~$2 each) |
+| 5 pcs | ESP32-S3-DevKitC-1 N16R8 | module owner-fitted | MCU side of the stack |
+| 1 | 5 V PSU | 5 V 5 A (per rail budget) | from A§2 sizing |
+| 1 | ABS/DIN enclosure | 130x80x38 mm class | vented; antenna clearance |
+| 1 | USB-C passthrough cable set | | flashing/console cutout |
+| 1 | DC barrel + screw terminal pigtails | | PSU entry |
+| 1 | Fuse set | master 5 A + per-output SMD/PTC | protection per A§3 |
+| 1 | TVS/ESD + reverse-pol parts | bidirectional TVS, Schottky | per connector |
+| 1 | LDO + decoupling set | AMS1117-3.3 class | 3.3 V rail |
+| opt | IRLZ34N + gate parts | | conventional RGB zones |
+| opt | 3.5 inch ILI9488 + FT6236 panel | | touchscreen build |
+| 1 | RoHS/REACH technical file pack | | CE self-cert records |
