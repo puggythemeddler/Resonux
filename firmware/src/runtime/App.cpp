@@ -10,6 +10,8 @@
 #include "web/WebUi.h"
 #include <Arduino.h>
 #include <string.h>
+#include "driver/gpio.h"
+#include "esp_sleep.h"
 
 App& App::instance() {
   static App app;
@@ -171,6 +173,95 @@ bool App::setTheme(const char* id) {
   return ConfigStore::save(_config);
 }
 
+bool App::setSensitivity(float value) {
+  if (value < 0.0f || value > 5.0f) return false;
+  for (int i = 0; i < _stripCount; ++i) {
+    StripRuntime* st = _strips[i];
+    if (!st) continue;
+    _config.strips[i].sensitivity = value;
+    st->refreshParams();
+  }
+  return ConfigStore::save(_config);
+}
+
+bool App::setDisplayBacklightPct(int pct) {
+  if (pct < 0 || pct > 100) return false;
+  _config.display.backlightPct = pct;
+  DisplayManager::instance().setBacklightPct((uint8_t)pct);
+  return ConfigStore::save(_config);
+}
+
+bool App::setDisplayTimeout(int seconds) {
+  if (seconds < 0 || seconds > 86400) return false;
+  _config.display.screenTimeoutS = seconds;
+  return ConfigStore::save(_config);
+}
+
+bool App::requestRestart() { return startShutdown(sys::Action::Restart); }
+bool App::requestPowerOff() { return startShutdown(sys::Action::PowerOff); }
+
+bool App::startShutdown(sys::Action a) {
+  if (!_sysMode.request(a)) return false;  // already shutting down
+  xTaskCreatePinnedToCore(App::shutdownTaskEntry, "shutdown", 4096, this, 12,
+                          &_shutdownTask, 0);
+  return true;
+}
+
+void App::extinguishLeds() {
+  for (int i = 0; i < _stripCount; ++i) {
+    StripRuntime* st = _strips[i];
+    if (!st) continue;
+    LEDDriver* d = st->driver();
+    if (!d) continue;
+    d->clear();
+    d->show();
+  }
+}
+
+void App::gracefulShutdown() {
+  sys::SystemMode& m = _sysMode;
+  m.beginShutdown();
+  logBoot("sys", "shutting down (%s)", m.actionName());
+
+  // 1. Quiet real-time outputs: strips, DMX, sync.
+  extinguishLeds();
+  if (_artnet) {
+    _artnet->blackout();
+    _artnet->stop();
+  }
+  if (_sync) _sync->stop();
+
+  // 2. Persist whatever state matters, best-effort and bounded.
+  ConfigStore::save(_config);
+
+  // 3. Last chance for the web client to see the ack / status change.
+  vTaskDelay(pdMS_TO_TICKS(500));
+
+  m.complete();
+
+  if (m.pending() == sys::Action::PowerOff) {
+    logBoot("sys", "entering low-power state");
+    DisplayManager::instance().sleep();  // backlight off before sleep
+    const int wakePin = _config.display.wakePin;
+    if (wakePin >= 0 && wakePin < 48) {
+      esp_sleep_enable_ext0_wakeup((gpio_num_t)wakePin, 1);
+      logBoot("sys", "wake on GPIO%d rising edge armed", wakePin);
+    } else {
+      logBoot("sys", "no wakePin configured - use reset/power to wake");
+    }
+    esp_deep_sleep_start();  // noreturn until wake / reset
+  } else {
+    logBoot("sys", "restarting");
+    ESP.restart();
+  }
+}
+
+void App::shutdownTaskEntry(void* arg) {
+  App* app = (App*)arg;
+  app->gracefulShutdown();
+  vTaskSuspend(nullptr);  // unreachable after restart/sleep
+}
+
 void App::audioLoop() {
   // Slaves render from the network-multicast frame; the mic pipeline idles.
   if (_sync && _sync->role() == SYNC_SLAVE) {
@@ -195,6 +286,10 @@ void App::audioLoop() {
 }
 
 void App::ledLoop() {
+  if (_sysMode.shuttingDown()) {
+    vTaskDelay(20);  // outputs are quiesced; stop rendering during shutdown
+    return;
+  }
   AudioFrame f;
   takeFrame(f);
   uint32_t now = millis();

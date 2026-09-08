@@ -17,6 +17,10 @@ public:
   bool begin();
   void stop();
 
+  // Zero a final DMX frame and push it before stop(); fixtures fade to black
+  // instead of holding the last audio-mapped values.
+  void blackout();
+
   bool isConnected() const { return _connected; }
   const uint8_t* dmxData() const { return _dmxOut; }
   uint16_t dmxLength() const { return kDmxChannels; }

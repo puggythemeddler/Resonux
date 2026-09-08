@@ -18,6 +18,7 @@ repo; a phase is *done* when its acceptance criteria pass on hardware.
 | **8d** | Touchscreen UI | LVGL on hardware-independent `DisplayDriver`/`TouchDriver` (`DisplayManager`), ili9488 + FT6236 drivers, Now/Themes/System screens, `esp32-s3-ui` env | panel theme/brightness control matches the web dashboard | **code in repo, builds green** |
 | **9** | Multi-controller | UDP-multicast `AudioFrame`, master/slave roles, clock offset, frame counter | 2+ controllers render synchronised to one master | **code in repo (SyncNode + SyncClock), builds green** |
 | **10** | Productisation | carrier/HAT PCB (2-layer splice), commodity enclosure, connectors/protection/power-dist, user-manual outline, CE self-cert + RoHS technical file | design-docs + BOM for production (`docs/PRODUCTISATION.md`, `docs/BOM.md`) | **design doc + BOM in repo** |
+| **11** | System controls | graceful restart + safe power-off (deep sleep, optional wake pin), `/api/system/*` + live `sensitivity`/`backlight`/`timeout` endpoints (no reboot), web System tab + LVGL confirmations, output-safety shutdown sequence | live tuning never triggers a reboot; restart/power-off silence all outputs first (see `docs/SYSTEM.md`) | **implemented, builds green, bench pending** |
 
 ## Near-term plan (after architecture sign-off)
 

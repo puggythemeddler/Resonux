@@ -41,6 +41,7 @@ struct DisplayConfig {
   int       touchScl = 3;
   int       touchIrq = 34;
   int       touchRst = -1;
+  int       wakePin = -1;       // optional GPIO to wake from deep sleep (ext0)
   int       logicalW = 320;      // responsive reference; scaled to panel
   int       logicalH = 480;
   int       backlightPct = 70;   // screen brightness % (separate from LEDs)

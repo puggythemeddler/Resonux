@@ -11,6 +11,7 @@
   --green: #34d399;
   --red: #f87171;
   --amber: #fbbf24;
+  --warm: #ff7a18;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
@@ -135,7 +136,7 @@ legend { color: var(--muted); font-size: 11px; padding: 0 6px; }
 .persona { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--muted); }
 .persona span { min-width: 62px; text-align: right; text-transform: uppercase; letter-spacing: .03em; }
 .persona .bar { flex: 1; height: 6px; background: rgba(255, 255, 255, .08); border-radius: 4px; overflow: hidden; }
-.persona .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ff7a18); border-radius: 4px; }
+.persona .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--warm)); border-radius: 4px; }
 .editor-card { grid-column: 1 / -1; border-color: var(--accent); }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .fld { display: flex; flex-direction: column; color: var(--muted); font-size: 12px; gap: 4px; }
@@ -144,3 +145,25 @@ legend { color: var(--muted); font-size: 11px; padding: 0 6px; }
 .pal-row input[type=text] { width: 92px; font-family: ui-monospace, monospace; }
 .pal-row input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
 .row .num { margin-left: auto; min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-size: 12.5px; }
+
+/* ---- system / confirmations ---- */
+.modal-ov {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: rgba(4, 7, 13, .72);
+  backdrop-filter: blur(3px);
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px; max-width: 400px; width: 92%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.modal h3 { margin: 0 0 10px; font-size: 16px; color: var(--text); }
+.modal p { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin: 0; }
+.sys-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 16px; color: var(--accent-2); font-size: 13.5px;
+}
+.sys-banner.off { border-color: var(--red); color: var(--red); }
+.card select { min-width: 160px; }

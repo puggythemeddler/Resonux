@@ -13,6 +13,9 @@ public:
 
   bool begin();
   bool setEffect(int effectId);
+  // Re-read static params (sensitivity, palette, ...) from the live config
+  // without recreating the effect — used by live-tuning endpoints.
+  void refreshParams() { rebuildParams(); }
   void step(const AudioFrame& audio, uint32_t nowMs,
             const Themes::ThemeFrame* theme = nullptr);
 

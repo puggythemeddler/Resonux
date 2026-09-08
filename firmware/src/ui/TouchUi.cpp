@@ -46,6 +46,10 @@ struct TouchUi::Impl {
   lv_obj_t* bars[8] = {};
   lv_obj_t* brightValue = nullptr;  // System tab readout
   lv_obj_t* brightSlider = nullptr;
+  lv_obj_t* backSlider = nullptr;   // screen backlight 0-100
+  lv_obj_t* backValue = nullptr;
+  lv_obj_t* timeoutValue = nullptr;
+  lv_obj_t* statusLabel = nullptr;
   lv_obj_t* themeButtons[kMaxThemeButtons] = {};
   const char* themeIds[kMaxThemeButtons] = {};
   int themeCount = 0;
@@ -67,6 +71,122 @@ static void brightnessCb(lv_event_t* e) {
   lv_obj_t* slider = lv_event_get_target(e);
   uint8_t v = (uint8_t)lv_slider_get_value(slider);
   App::instance().setMasterBrightness(v);
+}
+
+// --- confirmation overlay -----------------------------------------------------
+lv_obj_t* gConfirmBox = nullptr;
+
+static void confirmHide() {
+  if (gConfirmBox) {
+    lv_obj_del(gConfirmBox);
+    gConfirmBox = nullptr;
+  }
+}
+
+static void confirmShow(const char* title, const char* msg,
+                        const char* yesLabel, lv_event_cb_t onYes) {
+  confirmHide();
+  lv_obj_t* root = lv_scr_act();
+  lv_obj_t* box = lv_obj_create(root);
+  lv_obj_set_pos(box, 0, 0);
+  lv_obj_set_size(box, lv_obj_get_width(root), lv_obj_get_height(root));
+  lv_obj_set_style_bg_color(box, lv_color_black(), 0);
+  lv_obj_set_style_bg_opa(box, LV_OPA_50, 0);
+  lv_obj_set_style_border_width(box, 0, 0);
+  lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* card = lv_obj_create(box);
+  lv_obj_set_style_bg_color(card, lv_color_hex(0x141B26), 0);
+  lv_obj_set_width(card, LV_PCT(88));
+  lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(card, 12, 0);
+  lv_obj_set_style_pad_all(card, 16, 0);
+
+  lv_obj_t* t = lv_label_create(card);
+  lv_label_set_text(t, title);
+  lv_obj_set_style_text_font(t, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(t, lv_color_hex(0xF87171), 0);
+
+  lv_obj_t* m = lv_label_create(card);
+  lv_label_set_text(m, msg);
+  lv_obj_set_style_text_align(m, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_font(m, &lv_font_montserrat_14, 0);
+  lv_obj_set_width(m, LV_PCT(100));
+
+  lv_obj_t* row = lv_obj_create(card);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(row, 16, 0);
+  lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(row, 0, 0);
+
+  lv_obj_t* cancel = lv_btn_create(row);
+  lv_obj_set_size(cancel, 104, 48);
+  lv_obj_add_event_cb(cancel, [](lv_event_t* e) {
+    (void)e;
+    confirmHide();
+  }, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cl = lv_label_create(cancel);
+  lv_label_set_text(cl, "Cancel");
+  lv_obj_center(cl);
+
+  lv_obj_t* yes = lv_btn_create(row);
+  lv_obj_set_size(yes, 104, 48);
+  lv_obj_set_style_bg_color(yes, lv_color_hex(0xB91C1C), 0);
+  lv_obj_add_event_cb(yes, onYes, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* yl = lv_label_create(yes);
+  lv_label_set_text(yl, yesLabel);
+  lv_obj_center(yl);
+
+  gConfirmBox = box;
+}
+
+static void confirmRestartYes(lv_event_t* e) {
+  (void)e;
+  confirmHide();
+  App::instance().requestRestart();
+}
+
+static void confirmPowerOffYes(lv_event_t* e) {
+  (void)e;
+  confirmHide();
+  App::instance().requestPowerOff();
+}
+
+static void restartBtnCb(lv_event_t* e) {
+  (void)e;
+  confirmShow("Restart Resonux?", "LEDs turn off, then the controller restarts.",
+              "Restart", confirmRestartYes);
+}
+
+static void powerBtnCb(lv_event_t* e) {
+  (void)e;
+  confirmShow("Safe Power Off?", "LEDs off \xC2\xB7 DMX safe \xC2\xB7 low power. "
+              "Wake with reset or the configured wake pin.",
+              "Power Off", confirmPowerOffYes);
+}
+
+static void backlightCb(lv_event_t* e) {
+  lv_obj_t* slider = lv_event_get_target(e);
+  App::instance().setDisplayBacklightPct((int)lv_slider_get_value(slider));
+}
+
+static void timeoutCb(lv_event_t* e) {
+  (void)e;
+  static const int kTimeouts[] = {0, 30, 60, 120, 300, 600};
+  int cur = App::instance().config().display.screenTimeoutS;
+  int next = 30;
+  for (int i = 0; i < 6; ++i) {
+    if (kTimeouts[i] == cur) {
+      next = kTimeouts[(i + 1) % 6];
+      break;
+    }
+  }
+  App::instance().setDisplayTimeout(next);
 }
 
 static lv_obj_t* makeTab(lv_obj_t* tv, const char* title) {
@@ -200,15 +320,20 @@ void TouchUi::begin(DisplayManager& mgr) {
   }
 
   // --- System ----------------------------------------------------------------
-  lv_obj_t* sLbl = lv_label_create(tabSys);
-  lv_label_set_text(sLbl, "Master brightness");
-  lv_obj_set_style_text_color(sLbl, lv_color_hex(0x8899AA), 0);
-  lv_obj_set_style_text_font(sLbl, &lv_font_montserrat_14, 0);
-  lv_obj_align(sLbl, LV_ALIGN_TOP_MID, 0, 10);
+  lv_obj_set_scroll_dir(tabSys, LV_DIR_VER);
+  lv_obj_set_flex_flow(tabSys, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(tabSys, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(tabSys, 6, 0);
+
+  lv_obj_t* mbLbl = lv_label_create(tabSys);
+  lv_label_set_text(mbLbl, "Master brightness");
+  lv_obj_set_style_text_color(mbLbl, lv_color_hex(0x8899AA), 0);
+  lv_obj_set_style_text_font(mbLbl, &lv_font_montserrat_12, 0);
 
   _impl->brightSlider = lv_slider_create(tabSys);
-  lv_obj_set_width(_impl->brightSlider, LV_PCT(85));
-  lv_obj_align(_impl->brightSlider, LV_ALIGN_TOP_MID, 0, 44);
+  lv_obj_set_width(_impl->brightSlider, LV_PCT(100));
+  lv_obj_set_height(_impl->brightSlider, 30);
   lv_slider_set_range(_impl->brightSlider, 0, 255);
   lv_slider_set_value(_impl->brightSlider, App::instance().masterBrightness(),
                       LV_ANIM_OFF);
@@ -216,14 +341,72 @@ void TouchUi::begin(DisplayManager& mgr) {
                       nullptr);
 
   _impl->brightValue = lv_label_create(tabSys);
-  lv_obj_set_style_text_font(_impl->brightValue, &lv_font_montserrat_20, 0);
-  lv_obj_align(_impl->brightValue, LV_ALIGN_TOP_MID, 0, 96);
+  lv_obj_set_style_text_font(_impl->brightValue, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(_impl->brightValue, lv_color_hex(0x8899AA), 0);
+
+  lv_obj_t* bbLbl = lv_label_create(tabSys);
+  lv_label_set_text(bbLbl, "Screen brightness");
+  lv_obj_set_style_text_color(bbLbl, lv_color_hex(0x8899AA), 0);
+  lv_obj_set_style_text_font(bbLbl, &lv_font_montserrat_12, 0);
+
+  _impl->backSlider = lv_slider_create(tabSys);
+  lv_obj_set_width(_impl->backSlider, LV_PCT(100));
+  lv_obj_set_height(_impl->backSlider, 30);
+  lv_slider_set_range(_impl->backSlider, 0, 100);
+  lv_slider_set_value(_impl->backSlider,
+                      DisplayManager::instance().backlightPct(), LV_ANIM_OFF);
+  lv_obj_add_event_cb(_impl->backSlider, backlightCb, LV_EVENT_VALUE_CHANGED,
+                      nullptr);
+
+  _impl->backValue = lv_label_create(tabSys);
+  lv_obj_set_style_text_font(_impl->backValue, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(_impl->backValue, lv_color_hex(0x8899AA), 0);
+
+  lv_obj_t* tmLabel = lv_label_create(tabSys);
+  lv_label_set_text(tmLabel, "Screen timeout  (tap to cycle)");
+  lv_obj_set_style_text_color(tmLabel, lv_color_hex(0x8899AA), 0);
+  lv_obj_set_style_text_font(tmLabel, &lv_font_montserrat_12, 0);
+
+  lv_obj_t* timeoutBtn = lv_btn_create(tabSys);
+  lv_obj_set_width(timeoutBtn, LV_PCT(100));
+  lv_obj_set_height(timeoutBtn, 44);
+  lv_obj_add_event_cb(timeoutBtn, timeoutCb, LV_EVENT_CLICKED, nullptr);
+  _impl->timeoutValue = lv_label_create(timeoutBtn);
+  lv_label_set_text(_impl->timeoutValue, "60 s");
+  lv_obj_center(_impl->timeoutValue);
+
+  _impl->statusLabel = lv_label_create(tabSys);
+  lv_obj_set_width(_impl->statusLabel, LV_PCT(100));
+  lv_label_set_long_mode(_impl->statusLabel, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_color(_impl->statusLabel, lv_color_hex(0x556677), 0);
+  lv_obj_set_style_text_font(_impl->statusLabel, &lv_font_montserrat_12, 0);
+
+  lv_obj_t* restartBtn = lv_btn_create(tabSys);
+  lv_obj_set_width(restartBtn, LV_PCT(100));
+  lv_obj_set_height(restartBtn, 50);
+  lv_obj_set_style_border_color(restartBtn, lv_color_hex(0xF87171), 0);
+  lv_obj_set_style_border_width(restartBtn, 2, 0);
+  lv_obj_add_event_cb(restartBtn, restartBtnCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* rl = lv_label_create(restartBtn);
+  lv_label_set_text(rl, "Restart");
+  lv_obj_center(rl);
+
+  lv_obj_t* powerBtn = lv_btn_create(tabSys);
+  lv_obj_set_width(powerBtn, LV_PCT(100));
+  lv_obj_set_height(powerBtn, 50);
+  lv_obj_set_style_bg_color(powerBtn, lv_color_hex(0x7F1D1D), 0);
+  lv_obj_add_event_cb(powerBtn, powerBtnCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* pl = lv_label_create(powerBtn);
+  lv_label_set_text(pl, "Safe Power Off");
+  lv_obj_center(pl);
 
   lv_obj_t* sysNote = lv_label_create(tabSys);
-  lv_label_set_text(sysNote, "Screen timeout does not stop audio or LEDs");
+  lv_label_set_text(sysNote, "Timeout dims only the screen — audio, LEDs,\n"
+                             "Art-Net and Wi-Fi keep running.");
   lv_obj_set_style_text_color(sysNote, lv_color_hex(0x556677), 0);
   lv_obj_set_style_text_font(sysNote, &lv_font_montserrat_12, 0);
-  lv_obj_align(sysNote, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_set_width(sysNote, LV_PCT(100));
+  lv_label_set_long_mode(sysNote, LV_LABEL_LONG_WRAP);
 }
 
 void TouchUi::tick(uint32_t nowMs) {
@@ -269,6 +452,39 @@ void TouchUi::render() {
   }
   if (I.brightSlider && (uint8_t)lv_slider_get_value(I.brightSlider) != mb) {
     lv_slider_set_value(I.brightSlider, mb, LV_ANIM_OFF);
+  }
+  uint8_t bl = DisplayManager::instance().backlightPct();
+  if (I.backSlider && (uint8_t)lv_slider_get_value(I.backSlider) != bl) {
+    lv_slider_set_value(I.backSlider, bl, LV_ANIM_OFF);
+  }
+  if (I.backValue) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d%%", (int)bl);
+    lv_label_set_text(I.backValue, buf);
+  }
+  if (I.timeoutValue) {
+    int ts = App::instance().config().display.screenTimeoutS;
+    char buf[24];
+    if (ts <= 0) {
+      snprintf(buf, sizeof(buf), "Never");
+    } else if (ts >= 60 && ts % 60 == 0) {
+      snprintf(buf, sizeof(buf), "%d min", ts / 60);
+    } else {
+      snprintf(buf, sizeof(buf), "%d s", ts);
+    }
+    lv_label_set_text(I.timeoutValue, buf);
+  }
+  if (I.statusLabel) {
+    char buf[128];
+    const char* art = App::instance().artnet()
+                          ? App::instance().artnet()->statusString()
+                          : "off";
+    snprintf(buf, sizeof(buf), "%s \xC2\xB7 %s\nheap %u KB \xC2\xB7 uptime %lus"
+             "\nart-net %s",
+             App::instance().wifiModeName(), App::instance().systemStateName(),
+             (unsigned)(ESP.getFreeHeap() / 1024),
+             (unsigned long)(millis() / 1000), art);
+    lv_label_set_text(I.statusLabel, buf);
   }
 
   lv_timer_handler();

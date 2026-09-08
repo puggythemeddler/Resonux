@@ -89,5 +89,12 @@
     "tiltSpeed": 0.5,
     "colorSensitivity": 1.0
   },
-  "fixtures": []
+  "fixtures": [],
+
+  "display": {
+    "enabled": true,
+    "backlightPct": 70,
+    "screenTimeoutS": 60,
+    "wakePin": -1
+  }
 }

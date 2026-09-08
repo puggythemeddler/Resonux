@@ -277,6 +277,12 @@ export default function mockDevPlugin(): Plugin {
   let stripEffects = [0]
   let stripThemes: string[] = []
   let syncSeq = 0
+  let mockSysState = 'running'
+  let mockSysAction = 'none'
+  let mockOfflineUntil = 0
+  let mockBacklight = 70
+  let mockTimeout = 60
+  let mockSensitivity = 0.5
 
   return {
     name: 'resonux-mock-api',
@@ -286,6 +292,11 @@ export default function mockDevPlugin(): Plugin {
         if (!url.startsWith('/api/')) return next()
 
         if (url === '/api/status') {
+          if (Date.now() < mockOfflineUntil) {
+            res.statusCode = 503
+            res.end()
+            return
+          }
           json(res, 200, {
             ok: true,
             device: 'Resonux (simulator)',
@@ -301,6 +312,14 @@ export default function mockDevPlugin(): Plugin {
               seq: ++syncSeq,
               offsetMs: 50 + Math.floor(Math.random() * 300),
               masterAlive: true,
+            },
+            system: { state: mockSysState, action: mockSysAction },
+            display: {
+              enabled: true,
+              backlightPct: mockBacklight,
+              timeoutS: mockTimeout,
+              awake: mockSysState === 'running',
+              wakePin: -1,
             },
           })
           return
@@ -356,6 +375,30 @@ export default function mockDevPlugin(): Plugin {
         if (url === '/api/reboot') {
           startMs = Date.now()
           json(res, 200, { ok: true })
+          return
+        }
+
+        if (url === '/api/system/restart') {
+          mockSysState = 'restarting'
+          mockSysAction = 'restart'
+          mockOfflineUntil = Date.now() + 2500
+          json(res, 200, { ok: true, state: 'restarting' })
+          setTimeout(() => {
+            mockSysState = 'running'
+            mockSysAction = 'none'
+          }, 3000)
+          return
+        }
+
+        if (url === '/api/system/power-off') {
+          mockSysState = 'sleeping'
+          mockSysAction = 'power_off'
+          json(res, 200, { ok: true, state: 'sleeping' })
+          return
+        }
+
+        if (url === '/api/system/status') {
+          json(res, 200, { ok: true, state: mockSysState, action: mockSysAction })
           return
         }
 
@@ -494,6 +537,45 @@ export default function mockDevPlugin(): Plugin {
             while (stripEffects.length <= strip) stripEffects.push(0)
             stripEffects[strip] = id
             json(res, 200, { ok: true, effect: stripEffects })
+          })
+          return
+        }
+
+        if (url === '/api/state/sensitivity') {
+          readJson((body) => {
+            const v = Number(body.value)
+            if (!Number.isFinite(v) || v < 0 || v > 5) {
+              json(res, 400, { ok: false, error: 'value must be 0..5' })
+              return
+            }
+            mockSensitivity = v
+            json(res, 200, { ok: true, sensitivity: mockSensitivity })
+          })
+          return
+        }
+
+        if (url === '/api/state/backlight') {
+          readJson((body) => {
+            const v = Number(body.value)
+            if (!Number.isFinite(v) || v < 0 || v > 100) {
+              json(res, 400, { ok: false, error: 'value must be 0..100' })
+              return
+            }
+            mockBacklight = Math.round(v)
+            json(res, 200, { ok: true, backlightPct: mockBacklight })
+          })
+          return
+        }
+
+        if (url === '/api/state/timeout') {
+          readJson((body) => {
+            const v = Number(body.value)
+            if (!Number.isFinite(v) || v < 0 || v > 86400) {
+              json(res, 400, { ok: false, error: 'value must be 0..86400' })
+              return
+            }
+            mockTimeout = Math.round(v)
+            json(res, 200, { ok: true, timeoutS: mockTimeout })
           })
           return
         }

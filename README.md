@@ -160,12 +160,16 @@ A modern React dashboard served from the device — no cloud. Open `http://<ESP-
 from any device on the same network:
 
 - **Live** — real-time spectrum bars, amplitude/bass/mid/treble levels,
-  beat indicator, system stats (uptime, heap, FPS), global tuning sliders.
+  beat indicator, system stats (uptime, heap, FPS), live global tuning
+  (master brightness + sensitivity — applied instantly, no reboot).
 - **Themes** — browse and edit the device's lighting themes (palette swatches,
   brightness base/min, response incl. lowMid/highMid, animation flash/contrast/
   density, preferred effects); select globally or per strip with an effect
   override, create/edit/delete non-built-ins, reset defaults.
 - **Configuration** — view/edit the full `config.json` and save (reboots).
+- **System** — status readouts, panel backlight + timeout, **Restart** and
+  **Safe Power Off** (clean shutdown that silences outputs, saves config and
+  deep-sleeps the device; see `docs/SYSTEM.md`).
 - **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
   from the Arduino IDE (ArduinoOTA is active too).
 
@@ -177,9 +181,11 @@ either surface can drive the other. See `docs/WEB_DASHBOARD.md`.
 
 Build with the `esp32-s3-ui` PlatformIO env to link LVGL and enable the
 display/touch drivers. Three screens — **Now** (theme + spectrum + beat),
-**Themes** (one-tap theme selection, same state as web) and **System** (master
-LED brightness). Screen brightness and timeout are configured in `config.json`
-(`display` block) and are fully independent of LED output. See
+**Themes** (one-tap theme selection, same state as web) and **System**
+(master + screen brightness, timeout cycle, status line, **Restart** and
+**Safe Power Off** behind confirmation overlays). Screen brightness and
+timeout are configured live from either surface (`display` block in
+`config.json`) and are fully independent of LED output. See
 `docs/TOUCHSCREEN.md`.
 
 ### Art-Net (moving heads)
@@ -240,6 +246,7 @@ bass/mid/treble, beat, free heap).
 - `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
 - `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
 - `docs/PRODUCTISATION.md` — carrier PCB + enclosure + CE (Phase 10)
+- `docs/SYSTEM.md` — system controls: restart, safe power-off, display control
 - `docs/BENCH.md` — hardware bring-up checklist (turnkey steps when parts land)
 - `docs/ROADMAP.md` — phase plan & status
 
@@ -248,14 +255,16 @@ bass/mid/treble, beat, free heap).
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
 drivers + runtime) plus Art-Net DMX output, the **web dashboard** (Live /
-Themes / Configuration / OTA tabs), **18 themes** (data-driven, device-side +
-dashboard editing incl. Afro House + Auto classifier), **OTA**,
+Themes / Configuration / System / OTA tabs), **18 themes** (data-driven,
+device-side + dashboard editing incl. Afro House + Auto classifier), **OTA**,
 **WifiManager**, **multi-controller multicast sync** (master/slave +
-clock-offset lock), **host-side unit tests in CI** (37 pass), and the
-**LVGL touchscreen UI** (hardware-independent display/touch abstraction) are
-implemented and compile cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the
-default config, ~64 % flash with the touchscreen env); hardware bring-up is
-pending parts arrival (see `docs/HARDWARE.md`).
+clock-offset lock), **system controls** (graceful restart, safe power-off
+via deep sleep, live sensitivity/backlight/timeout endpoints), **host-side
+unit tests in CI** (43 pass), and the **LVGL touchscreen UI**
+(hardware-independent display/touch abstraction) are implemented and compile
+cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the default config, ~64 %
+flash with the touchscreen env); hardware bring-up is pending parts arrival
+(see `docs/HARDWARE.md`).
 
 ## License / ownership
 

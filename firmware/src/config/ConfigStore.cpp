@@ -134,6 +134,7 @@ void serializeDisplay(JsonObject d, const DisplayConfig& c) {
   d["touchScl"] = c.touchScl;
   d["touchIrq"] = c.touchIrq;
   d["touchRst"] = c.touchRst;
+  d["wakePin"] = c.wakePin;
   d["logicalW"] = c.logicalW;
   d["logicalH"] = c.logicalH;
   d["backlightPct"] = c.backlightPct;
@@ -157,6 +158,7 @@ void deserializeDisplay(JsonObject d, DisplayConfig& c) {
   c.touchScl = d["touchScl"] | c.touchScl;
   c.touchIrq = d["touchIrq"] | c.touchIrq;
   c.touchRst = d["touchRst"] | c.touchRst;
+  c.wakePin = d["wakePin"] | c.wakePin;
   c.logicalW = clampInt(d["logicalW"] | c.logicalW, 160, 1600);
   c.logicalH = clampInt(d["logicalH"] | c.logicalH, 160, 1600);
   c.backlightPct = clampInt(d["backlightPct"] | c.backlightPct, 0, 100);

@@ -27,6 +27,12 @@ private:
   void sendState();
   void handleStateBrightness();
   void handleStateEffect();
+  void handleStateSensitivity();
+  void handleStateBacklight();
+  void handleStateTimeout();
+  void sendSystemStatus();
+  void handleSystemRestart();
+  void handleSystemPowerOff();
   void sendThemes();
   void handleThemesPut();
   void handleThemesDelete();

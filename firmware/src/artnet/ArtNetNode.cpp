@@ -58,6 +58,12 @@ void ArtNetNode::stop() {
   _connected = false;
 }
 
+void ArtNetNode::blackout() {
+  if (!_running) return;
+  memset(_dmxOut, 0, kDmxChannels);
+  sendDmx();
+}
+
 bool ArtNetNode::connectWifi() {
   WifiManager& wifi = WifiManager::instance();
 

@@ -30,6 +30,12 @@ bool WebUi::begin(App& app) {
   _server.on("/api/state", HTTP_GET, [this]() { sendState(); });
   _server.on("/api/state/brightness", HTTP_POST, [this]() { handleStateBrightness(); });
   _server.on("/api/state/effect", HTTP_POST, [this]() { handleStateEffect(); });
+  _server.on("/api/state/sensitivity", HTTP_POST, [this]() { handleStateSensitivity(); });
+  _server.on("/api/state/backlight", HTTP_POST, [this]() { handleStateBacklight(); });
+  _server.on("/api/state/timeout", HTTP_POST, [this]() { handleStateTimeout(); });
+  _server.on("/api/system/status", HTTP_GET, [this]() { sendSystemStatus(); });
+  _server.on("/api/system/restart", HTTP_POST, [this]() { handleSystemRestart(); });
+  _server.on("/api/system/power-off", HTTP_POST, [this]() { handleSystemPowerOff(); });
   _server.on("/api/themes", HTTP_GET, [this]() { sendThemes(); });
   _server.on("/api/themes", HTTP_PUT, [this]() { handleThemesPut(); });
   _server.on("/api/themes", HTTP_DELETE, [this]() { handleThemesDelete(); });
@@ -178,6 +184,17 @@ void WebUi::sendStatus() {
     cn["status"] = "off";
   }
 
+  JsonObject sg = doc["system"].to<JsonObject>();
+  sg["state"] = _app->systemStateName();
+  sg["action"] = _app->systemMode().actionName();
+
+  JsonObject dp = doc["display"].to<JsonObject>();
+  dp["enabled"] = _app->config().display.enabled;
+  dp["backlightPct"] = DisplayManager::instance().backlightPct();
+  dp["timeoutS"] = _app->config().display.screenTimeoutS;
+  dp["awake"] = DisplayManager::instance().isAwake();
+  dp["wakePin"] = _app->config().display.wakePin;
+
   String out;
   serializeJson(doc, out);
   _server.send(200, "application/json", out);
@@ -232,10 +249,77 @@ void WebUi::handleConfigPut() {
 }
 
 void WebUi::handleReboot() {
-  _server.send(200, "application/json", "{\"ok\":true}");
-  logBoot("web", "reboot requested from dashboard");
-  delay(300);
-  ESP.restart();
+  _server.send(200, "application/json", "{\"ok\":true,\"action\":\"restart\"}");
+  logBoot("sys", "restart requested from dashboard (legacy /api/reboot)");
+  _app->requestRestart();
+}
+
+static bool readIntArg(JsonDocument& doc, const String& plain, int& value,
+                       int lo, int hi) {
+  if (deserializeJson(doc, plain) != DeserializationError::Ok) return false;
+  if (!doc["value"].is<int>()) return false;
+  value = doc["value"].as<int>();
+  return value >= lo && value <= hi;
+}
+
+void WebUi::handleStateSensitivity() {
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain")) != DeserializationError::Ok ||
+      !doc["value"].is<float>()) {
+    _server.send(400, "application/json", "{\"ok\":false}");
+    return;
+  }
+  bool ok = _app->setSensitivity(doc["value"].as<float>());
+  _server.send(ok ? 200 : 400, "application/json",
+               ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+void WebUi::handleStateBacklight() {
+  JsonDocument doc;
+  int v = -1;
+  if (!readIntArg(doc, _server.arg("plain"), v, 0, 100)) {
+    _server.send(400, "application/json", "{\"ok\":false}");
+    return;
+  }
+  bool ok = _app->setDisplayBacklightPct(v);
+  _server.send(ok ? 200 : 400, "application/json",
+               ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+void WebUi::handleStateTimeout() {
+  JsonDocument doc;
+  int v = -1;
+  if (!readIntArg(doc, _server.arg("plain"), v, 0, 86400)) {
+    _server.send(400, "application/json", "{\"ok\":false}");
+    return;
+  }
+  bool ok = _app->setDisplayTimeout(v);
+  _server.send(ok ? 200 : 400, "application/json",
+               ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+void WebUi::sendSystemStatus() {
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["state"] = _app->systemStateName();
+  doc["action"] = _app->systemMode().actionName();
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleSystemRestart() {
+  _server.send(200, "application/json",
+               "{\"ok\":true,\"action\":\"restart\"}");
+  logBoot("sys", "restart requested from dashboard");
+  _app->requestRestart();
+}
+
+void WebUi::handleSystemPowerOff() {
+  _server.send(200, "application/json",
+               "{\"ok\":true,\"action\":\"power_off\"}");
+  logBoot("sys", "power-off requested from dashboard");
+  _app->requestPowerOff();
 }
 
 // ---------------------------------------------------------------- themes

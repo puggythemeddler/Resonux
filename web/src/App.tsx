@@ -10,6 +10,8 @@ type Status = {
   wifi: { mode: string; ip: string; connected: boolean }
   artnet: { enabled: boolean; fixtures: number; status: string }
   sync: { enabled: boolean; role: string; seq?: number; offsetMs?: number; masterAlive?: boolean }
+  system: { state: string; action: string }
+  display: { enabled: boolean; backlightPct: number; timeoutS: number; awake: boolean; wakePin?: number }
 }
 
 type Frame = {
@@ -80,7 +82,7 @@ type StateT = {
   themeCount: number
 }
 
-type Tab = 'live' | 'themes' | 'config' | 'ota'
+type Tab = 'live' | 'themes' | 'config' | 'system' | 'ota'
 
 const baseBrightness = (t: Theme) =>
   typeof t.brightness === 'object' ? t.brightness.base : t.brightness
@@ -257,16 +259,16 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [sensitivity, setSensitivity] = useState(50)
-  const [brightness, setBrightness] = useState(100)
   const [themes, setThemes] = useState<ThemesData | null>(null)
   const [themesErr, setThemesErr] = useState('')
   const [editing, setEditing] = useState<ThemeDraft | null>(null)
   const [master, setMaster] = useState(255)
   const masterDirtyAt = useRef(0)
   const sensitivityRef = useRef(sensitivity)
-  const brightnessRef = useRef(brightness)
   sensitivityRef.current = sensitivity
-  brightnessRef.current = brightness
+  const [sysPhase, setSysPhase] = useState<'idle' | 'restarting' | 'reconnecting' | 'poweroff'>('idle')
+  const sysPhaseRef = useRef(sysPhase)
+  sysPhaseRef.current = sysPhase
 
   const poll = useCallback(async () => {
     try {
@@ -281,6 +283,9 @@ export default function App() {
       setStatus(sj)
       setFrame(fj)
       setOnline(true)
+      if (sysPhaseRef.current === 'restarting' || sysPhaseRef.current === 'reconnecting') {
+        setSysPhase('idle')
+      }
       if (
         stj.brightness !== undefined &&
         Date.now() - masterDirtyAt.current > 3000 &&
@@ -290,6 +295,7 @@ export default function App() {
       }
     } catch {
       setOnline(false)
+      if (sysPhaseRef.current === 'restarting') setSysPhase('reconnecting')
     }
   }, [master])
 
@@ -309,19 +315,48 @@ export default function App() {
   }
 
   const saveConfig = async () => {
-    const r = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: configText,
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(configText)
+    } catch (e) {
+      setOtaMsg('Config not saved — invalid JSON: ' + (e as Error).message)
+      return
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      setOtaMsg('Config not saved — expected a JSON object')
+      return
+    }
+    ask({
+      title: 'Save config & reboot?',
+      message: 'Writing config.json to flash, then Resonux reboots to apply it. A malformed value can reset settings to defaults.',
+      confirmLabel: 'Save & reboot',
+      onConfirm: async () => {
+        try {
+          const r = await fetch('/api/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: configText,
+          })
+          const j = (await r.json()) as { ok: boolean; rebooting?: boolean }
+          setOtaMsg(j.ok ? 'Config saved — rebooting…' : 'Save failed')
+        } catch (e) {
+          setOtaMsg('Config save failed: ' + (e as Error).message)
+        }
+      },
     })
-    const j = (await r.json()) as { ok: boolean; rebooting?: boolean }
-    setOtaMsg(j.ok ? 'Config saved' : 'Save failed')
   }
 
-  const reboot = async () => {
-    await fetch('/api/reboot', { method: 'POST' })
-    setOtaMsg('Rebooting…')
-  }
+  const reboot = () =>
+    ask({
+      title: 'Reboot Resonux?',
+      message: 'The controller restarts cleanly and reconnects automatically.',
+      confirmLabel: 'Reboot',
+      onConfirm: () => {
+        setSysPhase('restarting')
+        setOtaMsg('')
+        fetch('/api/system/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
+      },
+    })
 
   const loadThemes = useCallback(async () => {
     try {
@@ -349,23 +384,37 @@ export default function App() {
   }
 
   const deleteTheme = async (id: string) => {
-    try {
-      const r = await fetch('/api/themes?id=' + encodeURIComponent(id), { method: 'DELETE' })
-      if (!r.ok) throw new Error('HTTP ' + r.status)
-      await loadThemes()
-    } catch (e) {
-      setThemesErr((e as Error).message)
-    }
+    ask({
+      title: 'Delete theme?',
+      message: `"${id}" will be removed from the device. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          const r = await fetch('/api/themes?id=' + encodeURIComponent(id), { method: 'DELETE' })
+          if (!r.ok) throw new Error('HTTP ' + r.status)
+          await loadThemes()
+        } catch (e) {
+          setThemesErr((e as Error).message)
+        }
+      },
+    })
   }
 
   const resetThemes = async () => {
-    try {
-      const r = await fetch('/api/themes/reset', { method: 'POST' })
-      if (!r.ok) throw new Error('HTTP ' + r.status)
-      await loadThemes()
-    } catch (e) {
-      setThemesErr((e as Error).message)
-    }
+    ask({
+      title: 'Reset themes to defaults?',
+      message: 'All custom themes are replaced with the built-in defaults.',
+      confirmLabel: 'Reset',
+      onConfirm: async () => {
+        try {
+          const r = await fetch('/api/themes/reset', { method: 'POST' })
+          if (!r.ok) throw new Error('HTTP ' + r.status)
+          await loadThemes()
+        } catch (e) {
+          setThemesErr((e as Error).message)
+        }
+      },
+    })
   }
 
   const saveTheme = async (d: ThemeDraft) => {
@@ -439,37 +488,76 @@ export default function App() {
     }).catch(() => {})
   }
 
-  const applyGlobals = useCallback(async (rev: number, bright: number) => {
-    try {
-      const r = await fetch('/api/config')
-      const j = (await r.json()) as AnyConfig
-      const strips = Array.isArray(j.strips) ? j.strips : []
-      strips.forEach((s) => {
-        if (typeof s === 'object' && s !== null) {
-          const o = s as Record<string, unknown>
-          o.sensitivity = rev / 100
-          o.maxBrightness = bright
-        }
-      })
-      await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(j),
-      })
-    } catch {
-      /* ignore transient */
-    }
-  }, [])
+  const [confirm, setConfirm] = useState<null | {
+    title: string
+    message: string
+    confirmLabel: string
+    danger?: boolean
+    onConfirm: () => void
+  }>(null)
 
-  const applyTimers = useRef(false)
-  useEffect(() => {
-    if (applyTimers.current) return
-    applyTimers.current = true
-    const id = setInterval(() => {
-      applyGlobals(sensitivityRef.current, brightnessRef.current).catch(() => {})
-    }, 3000)
-    return () => clearInterval(id)
-  }, [applyGlobals])
+  const ask = (p: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void }) =>
+    setConfirm({
+      title: p.title,
+      message: p.message,
+      confirmLabel: p.confirmLabel ?? 'Confirm',
+      danger: p.danger ?? true,
+      onConfirm: p.onConfirm,
+    })
+
+  const sensitivityTimer = useRef<number | undefined>(undefined)
+  const setSensitivityLive = (v: number) => {
+    setSensitivity(v)
+    if (sensitivityTimer.current !== undefined) window.clearTimeout(sensitivityTimer.current)
+    sensitivityTimer.current = window.setTimeout(() => {
+      // Live sensitivity tuning only — never a full config PUT (no flash, no reboot).
+      fetch('/api/state/sensitivity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: sensitivityRef.current / 100 }),
+      }).catch(() => {})
+    }, 250)
+  }
+
+  const applyBacklight = (v: number) => {
+    fetch('/api/state/backlight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: v }),
+    }).catch(() => {})
+  }
+
+  const applyTimeout = (v: number) => {
+    fetch('/api/state/timeout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: v }),
+    }).catch(() => {})
+  }
+
+  const reqRestart = () =>
+    ask({
+      title: 'Restart Resonux?',
+      message: 'LEDs are silenced, then the controller restarts cleanly. The dashboard reconnects automatically.',
+      confirmLabel: 'Restart',
+      onConfirm: () => {
+        setSysPhase('restarting')
+        setOtaMsg('')
+        fetch('/api/system/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
+      },
+    })
+
+  const reqPowerOff = () =>
+    ask({
+      title: 'Safe power off?',
+      message: 'Resonux shuts down cleanly: LEDs off, Art-Net blacked out, config saved, then deep sleep. Power it back on with the reset button or the configured wake pin.',
+      confirmLabel: 'Power off',
+      onConfirm: () => {
+        setSysPhase('poweroff')
+        setOtaMsg('')
+        fetch('/api/system/power-off', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
+      },
+    })
 
   const uploadFirmware = () => fileRef.current?.click()
 
@@ -537,9 +625,9 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        {(['live', 'themes', 'config', 'ota'] as Tab[]).map((t) => (
+        {(['live', 'themes', 'config', 'system', 'ota'] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'config' ? 'Configuration' : 'Firmware Update'}
+            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'config' ? 'Configuration' : t === 'system' ? 'System' : 'Firmware Update'}
           </button>
         ))}
       </nav>
@@ -577,17 +665,18 @@ export default function App() {
           </div>
 
           <div className="card">
-            <h3>Global Tuning</h3>
+            <h3>Global Tuning (live)</h3>
+            <div className="row">
+              <label>Master brightness</label>
+              <input type="range" min={0} max={255} value={master} onChange={(e) => setMasterLocal(Number(e.target.value))} />
+              <span>{master}</span>
+            </div>
             <div className="row">
               <label>Sensitivity</label>
-              <input type="range" min={0} max={200} value={sensitivity} onChange={(e) => setSensitivity(Number(e.target.value))} />
-              <span>{(sensitivity / 100).toFixed(2)}</span>
+              <input type="range" min={0} max={200} value={sensitivity} onChange={(e) => setSensitivityLive(Number(e.target.value))} />
+              <span>{(sensitivity / 100).toFixed(2)}×</span>
             </div>
-            <div className="row">
-              <label>Max brightness</label>
-              <input type="range" min={0} max={255} value={brightness} onChange={(e) => setBrightness(Number(e.target.value))} />
-              <span>{brightness}</span>
-            </div>
+            <p className="muted">Applied instantly over live endpoints — no flash write, no reboot.</p>
           </div>
         </div>
       )}
@@ -672,6 +761,74 @@ export default function App() {
         </div>
       )}
 
+      {(sysPhase === 'restarting' || sysPhase === 'reconnecting' || sysPhase === 'poweroff') && (
+        <div className={`sys-banner ${sysPhase === 'poweroff' ? 'off' : ''}`}>
+          <span>
+            {sysPhase === 'restarting' && 'Restarting Resonux…'}
+            {sysPhase === 'reconnecting' && 'Device offline — waiting for Resonux to come back…'}
+            {sysPhase === 'poweroff' && 'Resonux is off'}
+          </span>
+          {(sysPhase === 'restarting' || sysPhase === 'reconnecting') && (
+            <button onClick={() => setSysPhase('idle')}>Dismiss</button>
+          )}
+        </div>
+      )}
+
+      {tab === 'system' && (
+        <div className="grid">
+          <div className="card">
+            <h3>Status</h3>
+            <div className="stat-row">
+              <div className="stat"><div className="val">{g((s) => s.system.state)}</div><div className="lbl">State</div></div>
+              <div className="stat"><div className="val">{g((s) => fmt(s.uptimeMs))}</div><div className="lbl">Uptime</div></div>
+              <div className="stat"><div className="val">{(online && status ? (status.heap / 1024).toFixed(0) : '—')}</div><div className="lbl">Heap KB</div></div>
+              <div className="stat"><div className="val">{g((s) => String(s.stripCount))}</div><div className="lbl">Strips</div></div>
+            </div>
+            <div className="stat-row">
+              <div className="stat"><div className="val">{g((s) => s.wifi.mode)}</div><div className="lbl">Wi-Fi</div></div>
+              <div className="stat"><div className="val">{g((s) => s.wifi.ip)}</div><div className="lbl">IP</div></div>
+              <div className="stat"><div className="val">{g((s) => s.artnet.status)}</div><div className="lbl">Art-Net</div></div>
+              <div className="stat"><div className="val">{g((s) => (s.sync.enabled ? s.sync.role : 'off'))}</div><div className="lbl">Sync</div></div>
+            </div>
+            {status?.system && status.system.action && status.system.action !== 'none' && (
+              <div className="stat-row" style={{ marginTop: 8 }}>
+                <div className="stat" style={{ flex: '1 1 100%' }}><div className="val">{status.system.action}</div><div className="lbl">Action</div></div>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>Display</h3>
+            <div className="row">
+              <label>Backlight</label>
+              <input type="range" min={0} max={100} value={status?.display?.backlightPct ?? 70} onChange={(e) => applyBacklight(Number(e.target.value))} />
+              <span>{status?.display?.backlightPct ?? 70}%</span>
+            </div>
+            <div className="row">
+              <label>Screen timeout</label>
+              <select value={status?.display?.timeoutS ?? 60} onChange={(e) => applyTimeout(Number(e.target.value))}>
+                {[0, 30, 60, 120, 300, 600].map((t) => (
+                  <option key={t} value={t}>{t === 0 ? 'Never' : `${t} seconds`}</option>
+                ))}
+              </select>
+            </div>
+            <p className="muted">Timeout only dims the panel — audio, LEDs, Art-Net and Wi-Fi keep running.</p>
+          </div>
+
+          <div className="card">
+            <h3>Power</h3>
+            <p className="muted">
+              Both actions silence LED/DMX outputs before changing state. Restart reboots in place; Safe power-off
+              saves config and enters deep sleep — your next start uses the reset button or the configured wake pin.
+            </p>
+            <div className="actions">
+              <button onClick={reqRestart} disabled={sysPhase !== 'idle'}>Restart</button>
+              <button className="danger" onClick={reqPowerOff} disabled={sysPhase !== 'idle'}>Safe power off</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === 'config' && (
         <div className="card">
           <div className="row">
@@ -716,6 +873,41 @@ export default function App() {
             Tip: build locally with <code>pio run</code> then upload{' '}
             <code>firmware/.pio/build/esp32-s3/firmware.bin</code>.
           </p>
+        </div>
+      )}
+
+      {sysPhase === 'poweroff' && (
+        <div className="modal-ov">
+          <div className="modal">
+            <h3>Resonux is off</h3>
+            <p>Resonux shut down cleanly and is in deep sleep.</p>
+            <p style={{ marginTop: 8 }}>Press the device's reset button (or the configured wake pin) to power it back on. This page reconnects automatically.</p>
+            <div className="actions">
+              <button className="primary" onClick={() => setSysPhase('idle')}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirm && (
+        <div className="modal-ov" onClick={() => setConfirm(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{confirm.title}</h3>
+            <p>{confirm.message}</p>
+            <div className="actions">
+              <button onClick={() => setConfirm(null)}>Cancel</button>
+              <button
+                className={confirm.danger ? 'danger' : 'primary'}
+                onClick={() => {
+                  const fn = confirm.onConfirm
+                  setConfirm(null)
+                  fn()
+                }}
+              >
+                {confirm.confirmLabel}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -69,7 +69,12 @@ and upload; no firmware edit needed.
 - **Now** — active theme label, 8 spectrum bars, beat flash indicator.
 - **Themes** — one row per theme; tap to select (text-only, no images — stays
   small). Uses the same `ThemeEngine` global selection as the web.
-- **System** — master LED brightness slider (0–255), screen-timeout note.
+- **System** — master LED brightness + screen backlight sliders, screen-timeout
+  cycle button (Never / 30 s / 60 s / 2 min / 5 min / 10 min), a status line
+  (Wi-Fi mode, system state, heap, uptime, Art-Net), and **Restart** /
+  **Safe Power Off** buttons — both behind full-screen confirmation overlays
+  that state outputs are silenced first. Built as a scrollable flex column so
+  it fits smaller panels too.
 
 Rendering is driven by `DisplayManager` at a controlled rate (`uiFps`);
 touch is polled from `ledLoop` at 30 ms and inverse-mapped to logical
@@ -83,3 +88,6 @@ scales to other panels.
 - No large allocations, JSON, or FS work inside the real-time LED loop.
 - Changing theme or brightness on the panel changes persisted controller
   state — the web dashboard reflects it on next poll, and vice versa.
+- Restart / Safe Power Off go through the same `SystemMode` state machine and
+  shutdown sequence as the dashboard (`docs/SYSTEM.md`); on touch, live
+  sensitivity/screen settings are already persisted, so nothing is lost.

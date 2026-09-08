@@ -12,8 +12,10 @@ offline on the controller's own Wi-Fi AP.
 `npm run dev` runs a **simulator**: a Vite dev-middleware mock
 (`web/mockDevPlugin.ts`) serves `*/api/status`, `*/api/frame`, `*/api/config`
 (GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/state`
-(+ `brightness`/`effect`), `*/api/reboot` and `*/api/ota`, so the whole UI can
-be developed and demoed with no hardware.
+(+ `brightness`/`sensitivity`/`backlight`/`timeout`/`effect`),
+`*/api/system/*` (status/restart/power-off, with a simulated offline window on
+restart), `*/api/reboot` and `*/api/ota`, so the whole UI can be developed and
+demoed with no hardware.
 
 ## 1. Stack & why
 
@@ -64,6 +66,12 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `GET /api/state` | live controller state (active theme, per-strip themes/effects, master brightness) |
 | `POST /api/state/brightness` `{value}` | live master LED brightness (no reboot) |
 | `POST /api/state/effect` `{strip,id}` | live per-strip effect override |
+| `GET /api/system/status` | `{ok, state, action}` (state machine in `firmware/src/system/SystemMode.h`) |
+| `POST /api/system/restart` `{}` | graceful restart (silences outputs, saves config; `/api/reboot` retained as an alias) |
+| `POST /api/system/power-off` `{}` | graceful deep sleep (same shutdown sequence; wake via reset / `wakePin`) |
+| `POST /api/state/sensitivity` `{value}` (0–5) | live per-strip sensitivity, persisted, **no reboot** |
+| `POST /api/state/backlight` `{value}` (0–100) | live display backlight, persisted, **no reboot** |
+| `POST /api/state/timeout` `{value}` (0–86400, 0=never) | live screen timeout, persisted, **no reboot** |
 
 `ThemeDef` wire shape (`ThemeEngine::encode`/`decode`): `id`, `name`,
 `builtin`, `brightness` (`{base,min}`), `saturation`, `palette` (`#RRGGBB`
@@ -81,6 +89,12 @@ flicker).
   sane bounds, rejects non-finite floats, bounds string fields, and returns
   `false` for configs claiming a *newer* schema version — so a downgraded
   firmware never clobbers a newer config.
+- **Live tuning never reboots.** The Global Tuning sliders (master brightness,
+  sensitivity) and the System-tab display controls write only to the
+  `/api/state/*` live endpoints; the old 3-second full-config-PUT tuning loop
+  was removed. Persisted values are written in place by
+  `ConfigStore::setDisplay` / dispatching, so a power cycle keeps them without
+  needing a config-save reboot.
 
 ## 4. Dashboard sections (spec §21)
 
