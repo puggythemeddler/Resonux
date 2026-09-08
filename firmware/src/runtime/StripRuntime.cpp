@@ -42,9 +42,36 @@ void StripRuntime::rebuildParams() {
   }
 }
 
-void StripRuntime::step(const AudioFrame& audio, uint32_t nowMs) {
+bool StripRuntime::setEffect(int effectId) {
+  Effect* e = fx::create(effectId);
+  if (!e) return false;
+  delete _effect;
+  _effect = e;
+  _effect->begin(*_frame, _params);
+  return true;
+}
+
+void StripRuntime::applyTheme(EffectParams& p, const Themes::ThemeFrame& f) {
+  p.themeBright = f.brightness;
+  p.themeMovement = f.movement;
+  p.themePulse = f.pulse;
+  p.themeFlash = f.beatFlash;
+  p.themeSparkle = f.sparkle;
+  p.themeEnergy = f.intensity;
+  p.themeHueOffset = f.colourShift;
+  p.themeSaturation = f.saturation;
+  p.themeBeat = f.beatResponse;
+  p.themeDensity = f.density;
+  p.themePalette = f.palette;
+  p.themePaletteCount = f.paletteCount;
+}
+
+void StripRuntime::step(const AudioFrame& audio, uint32_t nowMs,
+                        const Themes::ThemeFrame* theme) {
   if (!_frame || !_driver || !_effect) return;
-  _effect->render(*_frame, audio, _params);
+  EffectParams p = _params;
+  if (theme) applyTheme(p, *theme);
+  _effect->render(*_frame, audio, p);
   for (int i = 0; i < _frame->size(); ++i) {
     const Rgb& c = _frame->at(i);
     _driver->setPixel(i, c.r, c.g, c.b);

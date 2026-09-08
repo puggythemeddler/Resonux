@@ -118,6 +118,52 @@ void deserializeStrip(JsonObject s, StripConfig& c) {
   }
 }
 
+void serializeDisplay(JsonObject d, const DisplayConfig& c) {
+  d["enabled"] = c.enabled;
+  d["panel"] = c.panel;
+  d["touch"] = c.touch;
+  d["orientation"] = c.orientation;
+  d["spiSck"] = c.spiSck;
+  d["spiMosi"] = c.spiMosi;
+  d["spiMiso"] = c.spiMiso;
+  d["csPin"] = c.csPin;
+  d["dcPin"] = c.dcPin;
+  d["rstPin"] = c.rstPin;
+  d["blPin"] = c.blPin;
+  d["touchSda"] = c.touchSda;
+  d["touchScl"] = c.touchScl;
+  d["touchIrq"] = c.touchIrq;
+  d["touchRst"] = c.touchRst;
+  d["logicalW"] = c.logicalW;
+  d["logicalH"] = c.logicalH;
+  d["backlightPct"] = c.backlightPct;
+  d["screenTimeoutS"] = c.screenTimeoutS;
+  d["uiFps"] = c.uiFps;
+}
+
+void deserializeDisplay(JsonObject d, DisplayConfig& c) {
+  c.enabled = d["enabled"] | c.enabled;
+  c.panel = clampInt(d["panel"] | c.panel, 0, DISPLAY_PANEL_COUNT - 1);
+  c.touch = clampInt(d["touch"] | c.touch, 0, TOUCH_CHIP_COUNT - 1);
+  c.orientation = clampInt(d["orientation"] | c.orientation, 0, 1);
+  c.spiSck = d["spiSck"] | c.spiSck;
+  c.spiMosi = d["spiMosi"] | c.spiMosi;
+  c.spiMiso = d["spiMiso"] | c.spiMiso;
+  c.csPin = d["csPin"] | c.csPin;
+  c.dcPin = d["dcPin"] | c.dcPin;
+  c.rstPin = d["rstPin"] | c.rstPin;
+  c.blPin = d["blPin"] | c.blPin;
+  c.touchSda = d["touchSda"] | c.touchSda;
+  c.touchScl = d["touchScl"] | c.touchScl;
+  c.touchIrq = d["touchIrq"] | c.touchIrq;
+  c.touchRst = d["touchRst"] | c.touchRst;
+  c.logicalW = clampInt(d["logicalW"] | c.logicalW, 160, 1600);
+  c.logicalH = clampInt(d["logicalH"] | c.logicalH, 160, 1600);
+  c.backlightPct = clampInt(d["backlightPct"] | c.backlightPct, 0, 100);
+  c.screenTimeoutS = clampInt(d["screenTimeoutS"] | c.screenTimeoutS, 0, 86400);
+  c.uiFps = clampInt(d["uiFps"] | c.uiFps, 5, 120);
+}
+
 }  // namespace
 
 bool ConfigStore::begin() {
@@ -237,6 +283,11 @@ bool ConfigStore::load(Config& cfg) {
     cfg.artnet.colorSensitivity = validFloat(an["colorSensitivity"]) ? clampFloat(an["colorSensitivity"].as<float>(), 0.0f, 2.0f) : cfg.artnet.colorSensitivity;
   }
 
+  JsonObject disp = doc["display"].as<JsonObject>();
+  if (!disp.isNull()) {
+    deserializeDisplay(disp, cfg.display);
+  }
+
   if (doc["fixtures"].is<JsonArray>()) {
     JsonArray fixes = doc["fixtures"].as<JsonArray>();
     cfg.fixtureCount =
@@ -320,6 +371,9 @@ void buildDoc(const Config& cfg, JsonDocument& doc) {
   an["panSpeed"] = cfg.artnet.panSpeed;
   an["tiltSpeed"] = cfg.artnet.tiltSpeed;
   an["colorSensitivity"] = cfg.artnet.colorSensitivity;
+
+  JsonObject disp = doc["display"].to<JsonObject>();
+  serializeDisplay(disp, cfg.display);
 
   JsonArray fixes = doc["fixtures"].to<JsonArray>();
   for (int i = 0; i < cfg.fixtureCount; ++i) {

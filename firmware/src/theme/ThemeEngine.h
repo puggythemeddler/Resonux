@@ -71,21 +71,32 @@ private:
   Config*    _cfgPtr = nullptr;
   ThemeDef   _themes[kMaxThemes];
   int        _count = 0;
+  // Stable per-slot working copy so process()/processStrip() never return a
+  // ThemeFrame whose .palette dangles into a stack-local ThemeDef.
+  ThemeDef   _work[kMaxStrips + 1];  // [kMaxStrips] = global slot
   char       _active[kMaxStrips + 1][Themes::kMaxIdLen];  // [kMaxStrips]=global
   SemaphoreHandle_t _mutex = nullptr;
 
-  // AUTO-mode state (hysteresis-aware energy classifier)
+  // AUTO-mode state (hysteresis-aware classifier)
   float      _autoEnergy = 0.0f;
+  float      _autoGroove = 0.0f;
   int        _autoStage = 0;
   uint32_t   _autoStageSince = 0;
+  uint32_t   _autoLastMs = 0;
+  uint32_t   _autoAfroMs = 0;
+  uint32_t   _autoRockMs = 0;
 };
 
 inline Themes::ThemeFrame ThemeEngine::identityFrame() {
   Themes::ThemeFrame f;
   f.intensity = 1.0f;
+  f.energy = 1.0f;
   f.brightness = 1.0f;
   f.saturation = 1.0f;
   f.movement = 1.0f;
+  f.contrast = 0.5f;
+  f.density = 0.5f;
+  f.transitionSpeed = 0.5f;
   f.themeId = Themes::kDefaultThemeId;
   f.themeName = "Classic";
   return f;

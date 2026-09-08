@@ -26,6 +26,9 @@ bool WebUi::begin(App& app) {
   _server.on("/api/config", HTTP_GET, [this]() { sendConfig(); });
   _server.on("/api/config", HTTP_PUT, [this]() { handleConfigPut(); });
   _server.on("/api/reboot", HTTP_POST, [this]() { handleReboot(); });
+  _server.on("/api/state", HTTP_GET, [this]() { sendState(); });
+  _server.on("/api/state/brightness", HTTP_POST, [this]() { handleStateBrightness(); });
+  _server.on("/api/state/effect", HTTP_POST, [this]() { handleStateEffect(); });
   _server.on("/api/themes", HTTP_GET, [this]() { sendThemes(); });
   _server.on("/api/themes", HTTP_PUT, [this]() { handleThemesPut(); });
   _server.on("/api/themes", HTTP_DELETE, [this]() { handleThemesDelete(); });
@@ -222,6 +225,62 @@ void WebUi::handleReboot() {
 }
 
 // ---------------------------------------------------------------- themes
+void WebUi::sendState() {
+  const Config& c = _app->config();
+  ThemeEngine& te = ThemeEngine::instance();
+  JsonDocument doc;
+  JsonObject th = doc["theme"].to<JsonObject>();
+  th["global"] = te.activeId();
+  JsonArray strips = th["strips"].to<JsonArray>();
+  for (int i = 0; i < c.stripCount; ++i) strips.add(te.activeStripId(i));
+  JsonArray effects = doc["effect"].to<JsonArray>();
+  for (int i = 0; i < c.stripCount; ++i) effects.add(c.strips[i].effectId);
+  doc["brightness"] = c.masterBrightness;
+  doc["stripCount"] = c.stripCount;
+  doc["themeCount"] = te.count();
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleStateBrightness() {
+  if (!_server.hasArg("plain")) {
+    _server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain"))) {
+    _server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+  int v = doc["value"] | -1;
+  if (v < 0 || v > 255) {
+    _server.send(400, "application/json", "{\"error\":\"value 0..255\"}");
+    return;
+  }
+  _app->setMasterBrightness((uint8_t)v);
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::handleStateEffect() {
+  if (!_server.hasArg("plain")) {
+    _server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain"))) {
+    _server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+  int strip = doc["strip"] | -1;
+  int effectId = doc["effectId"] | -1;
+  if (strip < 0 || effectId < 0 || !_app->setStripEffect(strip, effectId)) {
+    _server.send(400, "application/json", "{\"error\":\"invalid strip/effect\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
 void WebUi::sendThemes() {
   ThemeEngine& te = ThemeEngine::instance();
   JsonDocument doc;
@@ -231,6 +290,9 @@ void WebUi::sendThemes() {
     ThemeEngine::encode(*te.get(i), o);
   }
   doc["active"] = te.activeId();
+  JsonArray strips = doc["strips"].to<JsonArray>();
+  const Config& c = _app->config();
+  for (int i = 0; i < c.stripCount; ++i) strips.add(te.activeStripId(i));
   String out;
   serializeJson(doc, out);
   _server.send(200, "application/json", out);

@@ -11,8 +11,9 @@ offline on the controller's own Wi-Fi AP.
 
 `npm run dev` runs a **simulator**: a Vite dev-middleware mock
 (`web/mockDevPlugin.ts`) serves `*/api/status`, `*/api/frame`, `*/api/config`
-(GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/reboot`
-and `*/api/ota`, so the whole UI can be developed and demoed with no hardware.
+(GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/state`
+(+ `brightness`/`effect`), `*/api/reboot` and `*/api/ota`, so the whole UI can
+be developed and demoed with no hardware.
 
 ## 1. Stack & why
 
@@ -60,11 +61,19 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `DELETE /api/themes?id=…` | delete a non-builtin theme |
 | `POST /api/themes/select` `{id}` / `{id,strip}` | apply theme globally or per strip |
 | `POST /api/themes/reset` | reinstall the default built-in themes |
+| `GET /api/state` | live controller state (active theme, per-strip themes/effects, master brightness) |
+| `POST /api/state/brightness` `{value}` | live master LED brightness (no reboot) |
+| `POST /api/state/effect` `{strip,id}` | live per-strip effect override |
 
 `ThemeDef` wire shape (`ThemeEngine::encode`/`decode`): `id`, `name`,
-`builtin`, `brightness` (0–100), `saturation` (0–255), `palette` (`#RRGGBB`
-hex strings), `response` (`{bass,mid,treble,beat,amp}`), `animation`
-(`{movement,pulse,sparkle,smoothing}`).
+`builtin`, `brightness` (`{base,min}`), `saturation`, `palette` (`#RRGGBB`
+hex strings), `description`, `response` (`{bass,lowMid,mid,highMid,treble,
+beat,amp}`), `animation` (`{flash,contrast,density,movement,pulse,sparkle,
+smoothing}`), `effects` (preferred `Effect` ids — manual per-strip overrides
+always win, these are hints only). The dashboard's **PersonaBar** on each card
+condenses the response curve into Bass/Groove/Treble/Movement; the Live tab
+pushes master brightness through `/api/state/brightness` (poll-synced, no LED
+flicker).
 
 - Admin token: `X-Admin` header on all state-changing endpoints.
 - All numeric/enum inputs validated on firmware (range + pin whitelist) before

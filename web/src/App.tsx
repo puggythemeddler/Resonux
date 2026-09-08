@@ -32,37 +32,74 @@ type AnyConfig = Record<string, unknown>
 type Theme = {
   id: string
   name: string
+  description?: string
   builtin?: boolean
-  brightness: number
+  brightness: number | { base: number; min?: number }
   saturation: number
   palette: string[]
-  response?: { bass: number; mid: number; treble: number; beat: number; amp: number }
-  animation?: { movement: number; pulse: number; sparkle: number; smoothing: number }
+  response?: { bass: number; lowMid?: number; mid: number; highMid?: number; treble: number; beat: number; amp: number }
+  animation?: { movement: number; pulse: number; flash?: number; sparkle: number; smoothing: number; contrast?: number; density?: number }
+  effects?: number[]
 }
 
 type ThemeDraft = {
   id: string
   name: string
   brightness: number
+  minBrightness: number
   saturation: number
   palette: string[]
   bass: number
+  lowMid: number
   mid: number
+  highMid: number
   treble: number
   beat: number
   amp: number
   movement: number
   pulse: number
+  flash: number
   sparkle: number
   smoothing: number
+  contrast: number
+  density: number
 }
 
 type ThemesData = {
   themes: Theme[]
   active: string
+  strips?: string[]
+}
+
+type StateT = {
+  theme: { global: string; strips: string[] }
+  effect: number[]
+  brightness: number
+  stripCount: number
+  themeCount: number
 }
 
 type Tab = 'live' | 'themes' | 'config' | 'ota'
+
+const baseBrightness = (t: Theme) =>
+  typeof t.brightness === 'object' ? t.brightness.base : t.brightness
+const minBrightness = (t: Theme) => {
+  if (typeof t.brightness === 'object') return t.brightness.min ?? Math.round(t.brightness.base * 0.3)
+  return Math.round(t.brightness * 0.3)
+}
+
+const DEFAULT_RESP = { bass: 1, lowMid: 1, mid: 1, highMid: 1, treble: 1, beat: 1, amp: 1 }
+const DEFAULT_ANIM = { movement: 0.5, pulse: 0.5, flash: 0.25, sparkle: 0.3, smoothing: 0.3, contrast: 0.5, density: 0.5 }
+const DEFAULT_DRAFT: ThemeDraft = {
+  id: 'custom1',
+  name: '',
+  brightness: 100,
+  minBrightness: 15,
+  saturation: 255,
+  palette: ['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'],
+  bass: 1, lowMid: 1, mid: 1, highMid: 1, treble: 1, beat: 1, amp: 1,
+  movement: 0.5, pulse: 0.5, flash: 0.25, sparkle: 0.3, smoothing: 0.3, contrast: 0.5, density: 0.5,
+}
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000)
@@ -113,6 +150,16 @@ function FieldSlider({ label, value, min, max, step, onChange }: {
   )
 }
 
+function PersonaBar({ label, value }: { label: string; value: number }) {
+  const pct = Math.min(100, Math.max(0, Math.round(value * 100)))
+  return (
+    <div className="persona">
+      <span>{label}</span>
+      <div className="bar"><i style={{ width: `${pct}%` }} /></div>
+    </div>
+  )
+}
+
 function ThemeEditor({ draft, onChange, onSave, onCancel }: {
   draft: ThemeDraft
   onChange: (d: ThemeDraft) => void
@@ -135,7 +182,8 @@ function ThemeEditor({ draft, onChange, onSave, onCancel }: {
       <div className="grid-2">
         {fld('Name', <input type="text" value={draft.name} onChange={(e) => set('name', e.target.value)} />)}
         {fld('Id', <input type="text" value={draft.id} onChange={(e) => set('id', e.target.value)} />)}
-        {fld('Brightness %', <input type="number" min={0} max={100} value={draft.brightness} onChange={(e) => set('brightness', Math.max(0, Math.min(100, Number(e.target.value))))} />)}
+        {fld('Brightness base %', <input type="number" min={0} max={100} value={draft.brightness} onChange={(e) => set('brightness', Math.max(0, Math.min(100, Number(e.target.value))))} />)}
+        {fld('Brightness min %', <input type="number" min={0} max={100} value={draft.minBrightness} onChange={(e) => set('minBrightness', Math.max(0, Math.min(100, Number(e.target.value))))} />)}
         {fld('Saturation 0–255', <input type="number" min={0} max={255} value={draft.saturation} onChange={(e) => set('saturation', Math.max(0, Math.min(255, Number(e.target.value))))} />)}
       </div>
 
@@ -158,7 +206,9 @@ function ThemeEditor({ draft, onChange, onSave, onCancel }: {
       <fieldset>
         <legend>Response (0–2)</legend>
         <FieldSlider label="Bass" value={draft.bass} min={0} max={2} step={0.05} onChange={(v) => set('bass', v)} />
+        <FieldSlider label="Low-mid" value={draft.lowMid} min={0} max={2} step={0.05} onChange={(v) => set('lowMid', v)} />
         <FieldSlider label="Mid" value={draft.mid} min={0} max={2} step={0.05} onChange={(v) => set('mid', v)} />
+        <FieldSlider label="High-mid" value={draft.highMid} min={0} max={2} step={0.05} onChange={(v) => set('highMid', v)} />
         <FieldSlider label="Treble" value={draft.treble} min={0} max={2} step={0.05} onChange={(v) => set('treble', v)} />
         <FieldSlider label="Beat" value={draft.beat} min={0} max={2} step={0.05} onChange={(v) => set('beat', v)} />
         <FieldSlider label="Amp" value={draft.amp} min={0} max={2} step={0.05} onChange={(v) => set('amp', v)} />
@@ -168,8 +218,11 @@ function ThemeEditor({ draft, onChange, onSave, onCancel }: {
         <legend>Animation (0–1)</legend>
         <FieldSlider label="Movement" value={draft.movement} min={0} max={1} step={0.05} onChange={(v) => set('movement', v)} />
         <FieldSlider label="Pulse" value={draft.pulse} min={0} max={1} step={0.05} onChange={(v) => set('pulse', v)} />
+        <FieldSlider label="Beat flash" value={draft.flash} min={0} max={1} step={0.05} onChange={(v) => set('flash', v)} />
         <FieldSlider label="Sparkle" value={draft.sparkle} min={0} max={1} step={0.05} onChange={(v) => set('sparkle', v)} />
         <FieldSlider label="Smoothing" value={draft.smoothing} min={0} max={1} step={0.05} onChange={(v) => set('smoothing', v)} />
+        <FieldSlider label="Contrast" value={draft.contrast} min={0} max={1} step={0.05} onChange={(v) => set('contrast', v)} />
+        <FieldSlider label="Density" value={draft.density} min={0} max={1} step={0.05} onChange={(v) => set('density', v)} />
       </fieldset>
 
       <div className="actions">
@@ -207,6 +260,8 @@ export default function App() {
   const [themes, setThemes] = useState<ThemesData | null>(null)
   const [themesErr, setThemesErr] = useState('')
   const [editing, setEditing] = useState<ThemeDraft | null>(null)
+  const [master, setMaster] = useState(255)
+  const masterDirtyAt = useRef(0)
   const sensitivityRef = useRef(sensitivity)
   const brightnessRef = useRef(brightness)
   sensitivityRef.current = sensitivity
@@ -214,19 +269,28 @@ export default function App() {
 
   const poll = useCallback(async () => {
     try {
-      const [sr, fr] = await Promise.all([
+      const [sr, fr, str] = await Promise.all([
         fetch('/api/status'),
         fetch('/api/frame'),
+        fetch('/api/state'),
       ])
       const sj = (await sr.json()) as Status
       const fj = (await fr.json()) as Frame
+      const stj = (await str.json()) as StateT
       setStatus(sj)
       setFrame(fj)
       setOnline(true)
+      if (
+        stj.brightness !== undefined &&
+        Date.now() - masterDirtyAt.current > 3000 &&
+        Math.abs(stj.brightness - master) > 2
+      ) {
+        setMaster(stj.brightness)
+      }
     } catch {
       setOnline(false)
     }
-  }, [])
+  }, [master])
 
   useEffect(() => {
     poll()
@@ -307,11 +371,11 @@ export default function App() {
     const body = {
       id: d.id.trim(),
       name: d.name.trim() || d.id.trim(),
-      brightness: d.brightness,
+      brightness: { base: d.brightness, min: d.minBrightness },
       saturation: d.saturation,
       palette: d.palette.filter((h) => /^#[0-9a-fA-F]{6}$/.test(h)),
-      response: { bass: d.bass, mid: d.mid, treble: d.treble, beat: d.beat, amp: d.amp },
-      animation: { movement: d.movement, pulse: d.pulse, sparkle: d.sparkle, smoothing: d.smoothing },
+      response: { bass: d.bass, lowMid: d.lowMid, mid: d.mid, highMid: d.highMid, treble: d.treble, beat: d.beat, amp: d.amp },
+      animation: { movement: d.movement, pulse: d.pulse, flash: d.flash, sparkle: d.sparkle, smoothing: d.smoothing, contrast: d.contrast, density: d.density },
     }
     try {
       const r = await fetch('/api/themes', {
@@ -331,23 +395,29 @@ export default function App() {
   }
 
   const openTheme = (t: Theme) => {
-    const r = t.response ?? { bass: 1, mid: 1, treble: 1, beat: 1, amp: 1 }
-    const an = t.animation ?? { movement: 0.5, pulse: 0.5, sparkle: 0.3, smoothing: 0.3 }
+    const r = t.response ?? DEFAULT_RESP
+    const an = t.animation ?? DEFAULT_ANIM
     setEditing({
       id: t.id,
       name: t.name,
-      brightness: t.brightness,
+      brightness: baseBrightness(t),
+      minBrightness: minBrightness(t),
       saturation: t.saturation,
       palette: t.palette && t.palette.length ? t.palette : ['#FF0000', '#00FF00', '#0000FF'],
       bass: r.bass,
+      lowMid: r.lowMid ?? 1,
       mid: r.mid,
+      highMid: r.highMid ?? 1,
       treble: r.treble,
       beat: r.beat,
       amp: r.amp,
       movement: an.movement,
       pulse: an.pulse,
+      flash: an.flash ?? 0.25,
       sparkle: an.sparkle,
       smoothing: an.smoothing,
+      contrast: an.contrast ?? 0.5,
+      density: an.density ?? 0.5,
     })
   }
 
@@ -355,22 +425,17 @@ export default function App() {
     const n = themes
       ? themes.themes.reduce((mx, x) => (/^custom\d+$/.test(x.id) ? Math.max(mx, Number(x.id.slice(6)) || 0) : mx), 0) + 1
       : 1
-    setEditing({
-      id: 'custom' + n,
-      name: '',
-      brightness: 100,
-      saturation: 255,
-      palette: ['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'],
-      bass: 1,
-      mid: 1,
-      treble: 1,
-      beat: 1,
-      amp: 1,
-      movement: 0.5,
-      pulse: 0.5,
-      sparkle: 0.3,
-      smoothing: 0.3,
-    })
+    setEditing({ ...DEFAULT_DRAFT, id: 'custom' + n })
+  }
+
+  const setMasterLocal = (v: number) => {
+    masterDirtyAt.current = Date.now()
+    setMaster(v)
+    fetch('/api/state/brightness', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: v }),
+    }).catch(() => {})
   }
 
   const applyGlobals = useCallback(async (rev: number, bright: number) => {
@@ -517,6 +582,12 @@ export default function App() {
                 <button className="danger" onClick={resetThemes}>Reset defaults</button>
               </div>
             </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <label>Master brightness (live)</label>
+              <input type="range" min={0} max={255} value={master} onChange={(e) => setMasterLocal(Number(e.target.value))} />
+              <span>{master}</span>
+              {!online && <span className="muted">controller offline</span>}
+            </div>
             {themesErr && <div className="err">{themesErr}</div>}
             {!themes && !themesErr && <p className="muted">Loading…</p>}
             {themes && themes.themes.length === 0 && !themesErr && (
@@ -524,36 +595,48 @@ export default function App() {
             )}
             {themes && themes.themes.length > 0 && (
               <div className="theme-grid">
-                {themes.themes.map((t) => (
-                  <div key={t.id} className={`theme-card ${t.id === themes.active ? 'active' : ''}`}>
-                    <div className="theme-head">
-                      <strong>{t.name}</strong>
-                      {t.builtin && <span className="badge">builtin</span>}
+                {themes.themes.map((t) => {
+                  const resp = t.response ?? DEFAULT_RESP
+                  const anim = t.animation ?? DEFAULT_ANIM
+                  return (
+                    <div key={t.id} className={`theme-card ${t.id === themes.active ? 'active' : ''}`}>
+                      <div className="theme-head">
+                        <strong>{t.name}</strong>
+                        {t.builtin && <span className="badge">builtin</span>}
+                      </div>
+                      <div className="swatches">
+                        {(t.palette ?? []).slice(0, 8).map((h, i) => (
+                          <span key={i} style={{ background: h }} />
+                        ))}
+                      </div>
+                      {t.description && <p className="theme-desc">{t.description}</p>}
+                      <div className="meta">
+                        <span>bri {baseBrightness(t)}% / min {minBrightness(t)}%</span>
+                        <span>sat {t.saturation}</span>
+                        <span>{t.id}</span>
+                      </div>
+                      {(themes.strips ?? []).includes(t.id) && <span className="badge strip">strip override</span>}
+                      <div className="personas">
+                        <PersonaBar label="Bass" value={resp.bass} />
+                        <PersonaBar label="Groove" value={resp.lowMid ?? 1} />
+                        <PersonaBar label="Treble" value={resp.treble} />
+                        <PersonaBar label="Movement" value={anim.movement} />
+                      </div>
+                      <div className="actions">
+                        <button
+                          className={t.id === themes.active ? 'primary' : undefined}
+                          onClick={() => selectTheme(t.id)}
+                        >
+                          {t.id === themes.active ? '✓ Active' : 'Select'}
+                        </button>
+                        <button onClick={() => openTheme(t)}>Edit</button>
+                        {!t.builtin && (
+                          <button className="danger" onClick={() => deleteTheme(t.id)}>Delete</button>
+                        )}
+                      </div>
                     </div>
-                    <div className="swatches">
-                      {(t.palette ?? []).slice(0, 8).map((h, i) => (
-                        <span key={i} style={{ background: h }} />
-                      ))}
-                    </div>
-                    <div className="meta">
-                      <span>bri {t.brightness}%</span>
-                      <span>sat {t.saturation}</span>
-                      <span>{t.id}</span>
-                    </div>
-                    <div className="actions">
-                      <button
-                        className={t.id === themes.active ? 'primary' : undefined}
-                        onClick={() => selectTheme(t.id)}
-                      >
-                        {t.id === themes.active ? '✓ Active' : 'Select'}
-                      </button>
-                      <button onClick={() => openTheme(t)}>Edit</button>
-                      {!t.builtin && (
-                        <button className="danger" onClick={() => deleteTheme(t.id)}>Delete</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

@@ -14,6 +14,8 @@ repo; a phase is *done* when its acceptance criteria pass on hardware.
 | **7** | Single-colour strips | `SingleColorDriver`, PWM brightness | mono strip pulses to beat/bass | drivers in repo |
 | **8** | Additional protocols + OTA | WS2811/WS2815/SK6812-RGBW/APA102/HD107 verified; dual-partition OTA + rollback | each chipset demo; OTA upgrade/rollback test | chipsets in driver; **OTA in repo (HTTP + ArduinoOTA), needs bench** |
 | **8b** | Art-Net DMX output | `ArtNetNode` (WiFi STA, UDP, ArtPoll/ArtDmx), fixture profiles (moving head / LED par), audio→DMX mapping | moving heads swing to the beat over WiFi | **code in repo, needs bench** |
+| **8c** | Theme engine | data-driven `ThemeEngine` (Audio→Theme→Effect pipeline), **18 themes** incl. distinct Afro House + Auto classifier (hysteresis + dwell), per-strip theme/effect overrides, `/api/state*` unified live state | themes switch cleanly, dashboard + touchscreen show the same active state | **code in repo, builds green** |
+| **8d** | Touchscreen UI | LVGL on hardware-independent `DisplayDriver`/`TouchDriver` (`DisplayManager`), ili9488 + FT6236 drivers, Now/Themes/System screens, `esp32-s3-ui` env | panel theme/brightness control matches the web dashboard | **code in repo, builds green** |
 | **9** | Multi-controller | UDP-multicast `AudioFrame`, master/slave roles, clock offset, frame counter | 2+ controllers render synchronised to one master | planned |
 | **10** | Productisation | custom PCB, enclosure, connectors, protection, power dist, user manual, manufacturing notes | design-docs + BOM for production; EMC/UL notes | planned |
 

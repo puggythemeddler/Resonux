@@ -4,6 +4,7 @@
 #include "audio/AudioFrame.h"
 #include "audio/AudioSource.h"
 #include "config/Config.h"
+#include "display/DisplayManager.h"
 #include "network/WifiManager.h"
 #include "runtime/StripRuntime.h"
 #include <freertos/FreeRTOS.h>
@@ -26,6 +27,11 @@ public:
   const char* wifiModeName() const { return WifiManager::instance().modeName(); }
 
   bool takeFrame(AudioFrame& out);
+  bool setMasterBrightness(uint8_t value);   // live, persists (no reboot)
+  bool setStripEffect(int strip, int effectId); // live switch, persists
+  bool setTheme(const char* id);             // live global theme switch, persists
+  uint8_t masterBrightness() const { return _config.masterBrightness; }
+  const DisplayManager& display() const { return DisplayManager::instance(); }
 
 private:
   App() {}

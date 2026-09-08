@@ -35,8 +35,16 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   Color Energy, Custom Mapping.
 - **Themes** — data-driven lighting personalities persisted to `/themes.json`
   on LittleFS: global palette, brightness/saturation, per-band response and
-  animation character. Apply globally or per strip, and edit from the
-  dashboard; built-ins reinstall on reset.
+  animation character. **18 built-in themes** — Classic, Party, Bass Heavy,
+  Spectrum, Rainbow, Club, Chill, Rock, EDM, Vocal, Beat, Ambient, Fire,
+  Ocean, Cyberpunk, Classical, **Afro House** (warm/organic/groove-driven,
+  low-mid-heavy) and **Auto** (hysteresis-based classifier that switches on
+  sustained feature votes). Apply globally or per strip, custom effects per
+  strip, and edit from the dashboard; built-ins reinstall on reset.
+- **Touchscreen UI** — optional LVGL GUI on a TFT panel (reference: 3.5″
+  SPI ILI9488 + FT6236 capacitive touch). Now / Themes / System screens,
+  screen timeout that never affects the LEDs, hardware-independent
+  display/touch abstraction, build via the `esp32-s3-ui` PlatformIO env.
 - **LED drivers (interchangeable)**:
 
   | Category | Examples |
@@ -109,7 +117,8 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 
 ```bash
 cd firmware
-pio run                          # compile (no hardware needed)
+pio run                          # compile default sizing (no touchscreen)
+pio run -e esp32-s3-ui           # build with LVGL touchscreen UI
 pio test -e native               # host-side unit tests (no hardware, ~21 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
@@ -149,13 +158,25 @@ from any device on the same network:
 - **Live** — real-time spectrum bars, amplitude/bass/mid/treble levels,
   beat indicator, system stats (uptime, heap, FPS), global tuning sliders.
 - **Themes** — browse and edit the device's lighting themes (palette swatches,
-  brightness/saturation, response + animation curves); select globally or per
-  strip, create/edit/delete non-built-ins, reset defaults.
+  brightness base/min, response incl. lowMid/highMid, animation flash/contrast/
+  density, preferred effects); select globally or per strip with an effect
+  override, create/edit/delete non-built-ins, reset defaults.
 - **Configuration** — view/edit the full `config.json` and save (reboots).
 - **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
   from the Arduino IDE (ArduinoOTA is active too).
 
-See `docs/WEB_DASHBOARD.md`.
+Dashboard and touchscreen share the same controller state — the REST API
+(`/api/state*`) reflects exactly what the touchscreen reads and writes, so
+either surface can drive the other. See `docs/WEB_DASHBOARD.md`.
+
+### Touchscreen (optional)
+
+Build with the `esp32-s3-ui` PlatformIO env to link LVGL and enable the
+display/touch drivers. Three screens — **Now** (theme + spectrum + beat),
+**Themes** (one-tap theme selection, same state as web) and **System** (master
+LED brightness). Screen brightness and timeout are configured in `config.json`
+(`display` block) and are fully independent of LED output. See
+`docs/TOUCHSCREEN.md`.
 
 ### Art-Net (moving heads)
 
@@ -212,6 +233,7 @@ bass/mid/treble, beat, free heap).
 - `docs/BOM.md` — bill of materials (Phase 2)
 - `docs/TESTING.md` — test strategy & tools
 - `docs/WEB_DASHBOARD.md` — Phase 4 dashboard spec
+- `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
 - `docs/ROADMAP.md` — phase plan & status
 
 ## Status
@@ -219,11 +241,13 @@ bass/mid/treble, beat, free heap).
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
 drivers + runtime) plus Art-Net DMX output, the **web dashboard** (Live /
-Themes / Configuration / OTA tabs), **themes** (device-side + dashboard
-editing), **OTA**, **WifiManager**, and **host-side unit
-tests in CI** are implemented and compile cleanly for ESP32-S3 (~37 % RAM /
-~56 % flash at the default config); hardware bring-up is pending parts arrival
-(see `docs/HARDWARE.md`).
+Themes / Configuration / OTA tabs), **18 themes** (data-driven, device-side +
+dashboard editing incl. Afro House + Auto classifier), **OTA**,
+**WifiManager**, **host-side unit tests in CI**, and the **LVGL touchscreen
+UI** (hardware-independent display/touch abstraction) are implemented and
+compile cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the default config,
+~64 % flash with the touchscreen env); hardware bring-up is pending parts
+arrival (see `docs/HARDWARE.md`).
 
 ## License / ownership
 

@@ -24,6 +24,9 @@ private:
   void sendConfig();
   void handleConfigPut();
   void handleReboot();
+  void sendState();
+  void handleStateBrightness();
+  void handleStateEffect();
   void sendThemes();
   void handleThemesPut();
   void handleThemesDelete();

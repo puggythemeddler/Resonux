@@ -22,9 +22,10 @@ public:
       float level = clamp01(a.bands[band]);
       Rgb c = Rgb{0, 0, 0};
       if (frac <= level * 0.9f || (level <= 0.01f && within == 0)) {
-        c = paletteColor(p.palette, level);
+        c = themeColor(p, level);
         float b = (float)p.minBrightness +
                   (float)(p.maxBrightness - p.minBrightness) * level * 0.55f;
+        b *= p.themeBright;
         c = scale(c, b / 255.0f);
       } else if (frac >= level * 0.9f && frac <= level * 0.9f + 0.08f) {
         c = scale(Rgb{255, 255, 255}, p.maxBrightness / 255.0f * 0.9f);

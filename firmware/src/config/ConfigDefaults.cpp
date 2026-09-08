@@ -78,4 +78,15 @@ void configDefaults(Config& cfg) {
   cfg.net.apPassword[0] = '\0';
   cfg.net.staSsid[0] = '\0';
   cfg.net.staPassword[0] = '\0';
+
+  DisplayConfig& d = cfg.display;
+  d.enabled = false;
+  d.panel = DISPLAY_NONE;
+  d.touch = TOUCH_NONE;
+  d.orientation = ORIENT_PORTRAIT;
+  d.logicalW = 320;
+  d.logicalH = 480;
+  d.backlightPct = 70;
+  d.screenTimeoutS = 60;
+  d.uiFps = 30;
 }

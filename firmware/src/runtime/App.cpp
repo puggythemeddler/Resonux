@@ -3,9 +3,12 @@
 #include "config/ConfigDefaults.h"
 #include "config/ConfigStore.h"
 #include "effects/EffectRegistry.h"
+#include "theme/ThemeEngine.h"
+#include "ui/TouchUi.h"
 #include "util/Log.h"
 #include "web/WebUi.h"
 #include <Arduino.h>
+#include <string.h>
 
 App& App::instance() {
   static App app;
@@ -21,6 +24,22 @@ bool App::begin() {
   bool loaded = ConfigStore::load(_config);
   logBoot("cfg", "config %s", loaded ? "loaded" : "defaults applied");
   if (!loaded) ConfigStore::save(_config);
+
+  ThemeEngine::instance().begin(_config);
+  logBoot("theme", "engine ready: %d themes, active=%s",
+          ThemeEngine::instance().count(), ThemeEngine::instance().activeId());
+
+  DisplayManager& disp = DisplayManager::instance();
+  TouchUi::instance().begin(disp);  // builds drivers + mgr.begin() when enabled
+  if (disp.enabled()) {
+    disp.setDrawCallback(TouchUi::renderStatic, nullptr);
+    logBoot("display", "panel up: %dx%d touch=%s timeout=%ds",
+            disp.panelW(), disp.panelH(),
+            _config.display.touch == TOUCH_NONE ? "none" : "yes",
+            _config.display.screenTimeoutS);
+  } else {
+    logBoot("display", "panel disabled");
+  }
 
   WifiManager& wifi = WifiManager::instance();
   if (wifi.begin(_config.net)) {
@@ -105,6 +124,26 @@ bool App::takeFrame(AudioFrame& out) {
   return true;
 }
 
+bool App::setMasterBrightness(uint8_t value) {
+  _config.masterBrightness = value;
+  return ConfigStore::save(_config);
+}
+
+bool App::setStripEffect(int strip, int effectId) {
+  if (strip < 0 || strip >= _stripCount) return false;
+  if (effectId < 0 || effectId >= EFFECT_COUNT) return false;
+  StripRuntime* st = _strips[strip];
+  if (!st || !st->setEffect(effectId)) return false;
+  _config.strips[strip].effectId = effectId;
+  return ConfigStore::save(_config);
+}
+
+bool App::setTheme(const char* id) {
+  if (!id || !ThemeEngine::instance().apply(id)) return false;
+  strncpy(_config.themeId, id, sizeof(_config.themeId) - 1);
+  return ConfigStore::save(_config);
+}
+
 void App::audioLoop() {
   _analyzer->process(millis());
   uint32_t fc = _analyzer->frameCount();
@@ -126,11 +165,31 @@ void App::ledLoop() {
   AudioFrame f;
   takeFrame(f);
   uint32_t now = millis();
+
+  DisplayManager& disp = DisplayManager::instance();
+  TouchUi& ui = TouchUi::instance();
+  ui.tick(now);
+  static uint32_t lastTouchPoll = 0;
+  if (now - lastTouchPoll >= 30) {
+    lastTouchPoll = now;
+    TouchPoint tp;
+    if (disp.pollTouch(tp)) ui.handleTouch(tp);
+  }
+  ui.updateAudio(f);
+  disp.update(now);
+
+  const float master =
+      _config.masterBrightness ? _config.masterBrightness / 255.0f : 1.0f;
+  ThemeEngine& te = ThemeEngine::instance();
   for (int i = 0; i < _stripCount; ++i) {
     StripRuntime* st = _strips[i];
     if (!st) continue;
     uint32_t period = 1000u / (st->cfg().targetFps ? st->cfg().targetFps : 60);
-    if (now - st->lastStepMs() >= period) st->step(f, now);
+    if (now - st->lastStepMs() >= period) {
+      Themes::ThemeFrame th = te.processStrip(i, f, now);
+      th.brightness *= master;
+      st->step(f, now, &th);
+    }
   }
   static uint32_t lastDiag = 0;
   if (now - lastDiag >= 3000) {

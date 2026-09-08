@@ -1,6 +1,7 @@
 #pragma once
 #include "audio/AudioAnalyzer.h"
 #include "config/ConfigDefs.h"
+#include "display/DisplayTypes.h"
 #include "effects/Effect.h"
 #include "led/LEDTypes.h"
 #include "theme/Theme.h"
@@ -89,6 +90,7 @@ struct Config {
   uint8_t            masterBrightness = 255;
   NetworkConfig      net;
   ArtNetConfig       artnet;
+  DisplayConfig      display;
   int                fixtureCount = 0;
   FixtureConfig      fixtures[kMaxFixtures];
 };

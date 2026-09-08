@@ -4,6 +4,7 @@
 #include "effects/Effect.h"
 #include "effects/LedFrame.h"
 #include "led/LEDDriver.h"
+#include "theme/Theme.h"
 
 class StripRuntime {
 public:
@@ -11,7 +12,9 @@ public:
   ~StripRuntime();
 
   bool begin();
-  void step(const AudioFrame& audio, uint32_t nowMs);
+  bool setEffect(int effectId);
+  void step(const AudioFrame& audio, uint32_t nowMs,
+            const Themes::ThemeFrame* theme = nullptr);
 
   const LEDDriver* driver() const { return _driver; }
   LEDDriver* driver() { return _driver; }
@@ -23,6 +26,7 @@ public:
 
 private:
   void rebuildParams();
+  void applyTheme(EffectParams& p, const Themes::ThemeFrame& f);
 
   const StripConfig& _cfg;
   LEDDriver*   _driver = nullptr;
