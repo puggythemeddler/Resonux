@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import mockDevPlugin from './mockDevPlugin'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), mockDevPlugin()],
   base: './',
   build: {
     outDir: '../firmware/data/web',

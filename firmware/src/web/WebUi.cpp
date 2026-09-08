@@ -3,6 +3,7 @@
 #include "config/ConfigStore.h"
 #include "network/WifiManager.h"
 #include "runtime/App.h"
+#include "theme/ThemeEngine.h"
 #include "util/Log.h"
 #include <Arduino.h>
 #include <ArduinoOTA.h>
@@ -25,6 +26,11 @@ bool WebUi::begin(App& app) {
   _server.on("/api/config", HTTP_GET, [this]() { sendConfig(); });
   _server.on("/api/config", HTTP_PUT, [this]() { handleConfigPut(); });
   _server.on("/api/reboot", HTTP_POST, [this]() { handleReboot(); });
+  _server.on("/api/themes", HTTP_GET, [this]() { sendThemes(); });
+  _server.on("/api/themes", HTTP_PUT, [this]() { handleThemesPut(); });
+  _server.on("/api/themes", HTTP_DELETE, [this]() { handleThemesDelete(); });
+  _server.on("/api/themes/select", HTTP_POST, [this]() { handleThemesSelect(); });
+  _server.on("/api/themes/reset", HTTP_POST, [this]() { handleThemesReset(); });
   _server.on(
       "/api/ota", HTTP_POST,
       [this]() {
@@ -213,4 +219,91 @@ void WebUi::handleReboot() {
   logBoot("web", "reboot requested from dashboard");
   delay(300);
   ESP.restart();
+}
+
+// ---------------------------------------------------------------- themes
+void WebUi::sendThemes() {
+  ThemeEngine& te = ThemeEngine::instance();
+  JsonDocument doc;
+  JsonArray arr = doc["themes"].to<JsonArray>();
+  for (int i = 0; i < te.count(); ++i) {
+    JsonObject o = arr.add<JsonObject>();
+    ThemeEngine::encode(*te.get(i), o);
+  }
+  doc["active"] = te.activeId();
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleThemesPut() {
+  if (!_server.hasArg("plain")) {
+    _server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain"))) {
+    _server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+  ThemeDef t;
+  char err[160] = "";
+  if (!ThemeEngine::decode(doc.as<JsonVariantConst>(), t, err, sizeof(err))) {
+    _server.send(400, "application/json", String("{\"error\":\"") + err + "\"}");
+    return;
+  }
+  if (!ThemeEngine::instance().update(t, true, err, sizeof(err))) {
+    _server.send(400, "application/json", String("{\"error\":\"") + err + "\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::handleThemesDelete() {
+  String id = _server.arg("id");
+  if (!id.length()) {
+    _server.send(400, "application/json", "{\"error\":\"missing id\"}");
+    return;
+  }
+  char err[160] = "";
+  if (!ThemeEngine::instance().remove(id.c_str(), err, sizeof(err))) {
+    _server.send(400, "application/json", String("{\"error\":\"") + err + "\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::handleThemesSelect() {
+  if (!_server.hasArg("plain")) {
+    _server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain"))) {
+    _server.send(400, "application/json", "{\"error\":\"bad json\"}");
+    return;
+  }
+  const char* id = doc["id"] | "";
+  if (!id[0]) {
+    _server.send(400, "application/json", "{\"error\":\"missing id\"}");
+    return;
+  }
+  ThemeEngine& te = ThemeEngine::instance();
+  bool ok = false;
+  int strip = doc["strip"] | -1;
+  if (strip >= 0 && strip < kMaxStrips) {
+    ok = te.applyStrip(strip, id);  // "" clears the per-strip override
+  } else {
+    ok = te.apply(id);
+  }
+  if (!ok) {
+    _server.send(400, "application/json", "{\"error\":\"unknown theme\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::handleThemesReset() {
+  ThemeEngine::instance().resetDefaults();
+  _server.send(200, "application/json", "{\"ok\":true}");
 }

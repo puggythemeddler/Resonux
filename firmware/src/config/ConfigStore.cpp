@@ -14,6 +14,16 @@ int clampInt(int v, int lo, int hi) {
   return v;
 }
 
+float clampFloat(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+bool validFloat(float v) {
+  return !isnan(v) && !isinf(v);
+}
+
 void serializeBands(JsonArray bands, const AudioAnalyzerConfig& a) {
   for (int b = 0; b < a.bandCount; ++b) {
     JsonObject o = bands.add<JsonObject>();
@@ -34,6 +44,7 @@ void deserializeBands(JsonArray bands, AudioAnalyzerConfig& a) {
 
 void serializeStrip(JsonObject s, const StripConfig& c) {
   s["name"] = c.name;
+  s["themeId"] = c.themeId;
   s["driverType"] = c.driverType;
   s["chipset"] = c.chipset;
   s["colorOrder"] = c.colorOrder;
@@ -68,6 +79,7 @@ void serializeStrip(JsonObject s, const StripConfig& c) {
 
 void deserializeStrip(JsonObject s, StripConfig& c) {
   strncpy(c.name, s["name"] | c.name, sizeof(c.name) - 1);
+  strncpy(c.themeId, s["themeId"] | c.themeId, sizeof(c.themeId) - 1);
   c.driverType = clampInt(s["driverType"] | c.driverType, 0, DRIVER_TYPE_COUNT - 1);
   c.chipset = clampInt(s["chipset"] | c.chipset, 0, CHIP_COUNT - 1);
   c.colorOrder = clampInt(s["colorOrder"] | c.colorOrder, 0, ORDER_COUNT - 1);
@@ -77,17 +89,17 @@ void deserializeStrip(JsonObject s, StripConfig& c) {
   c.reverse = s["reverse"] | c.reverse;
   c.zoneCount = clampInt(s["zoneCount"] | c.zoneCount, 1, kMaxStripZones);
   c.commonAnode = s["commonAnode"] | c.commonAnode;
-  c.pwmFreqHz = s["pwmFreqHz"] | c.pwmFreqHz;
+  c.pwmFreqHz = validFloat(s["pwmFreqHz"]) ? clampFloat(s["pwmFreqHz"].as<float>(), 50.0f, 100000.0f) : c.pwmFreqHz;
   c.effectId = clampInt(s["effectId"] | c.effectId, 0, EFFECT_COUNT - 1);
   c.maxBrightness = clampInt(s["maxBrightness"] | c.maxBrightness, 0, 255);
   c.minBrightness = clampInt(s["minBrightness"] | c.minBrightness, 0, 255);
-  c.maxCurrentA = s["maxCurrentA"] | c.maxCurrentA;
-  c.maxVolts = s["maxVolts"] | c.maxVolts;
+  c.maxCurrentA = validFloat(s["maxCurrentA"]) ? clampFloat(s["maxCurrentA"].as<float>(), 0.1f, 100.0f) : c.maxCurrentA;
+  c.maxVolts = validFloat(s["maxVolts"]) ? clampFloat(s["maxVolts"].as<float>(), 1.0f, 60.0f) : c.maxVolts;
   c.palette = clampInt(s["palette"] | c.palette, 0, PALETTE_COUNT - 1);
   c.startHue = clampInt(s["startHue"] | c.startHue, 0, 360);
-  c.hueSpeed = s["hueSpeed"] | c.hueSpeed;
-  c.sensitivity = s["sensitivity"] | c.sensitivity;
-  c.decay = s["decay"] | c.decay;
+  c.hueSpeed = validFloat(s["hueSpeed"]) ? clampFloat(s["hueSpeed"].as<float>(), 0.0f, 360.0f) : c.hueSpeed;
+  c.sensitivity = validFloat(s["sensitivity"]) ? clampFloat(s["sensitivity"].as<float>(), 0.0f, 10.0f) : c.sensitivity;
+  c.decay = validFloat(s["decay"]) ? clampFloat(s["decay"].as<float>(), 0.0f, 1.0f) : c.decay;
   c.targetFps = clampInt(s["targetFps"] | c.targetFps, 1, 120);
   if (s["zones"].is<JsonArray>()) {
     JsonArray zones = s["zones"].as<JsonArray>();
@@ -126,8 +138,12 @@ bool ConfigStore::load(Config& cfg) {
   f.close();
   if (err) return false;
 
+  int ver = doc["version"] | 0;
+  if (ver > kConfigVersion) return false;  // config from a future build—do not clobber
+
   strncpy(cfg.deviceName, doc["deviceName"] | cfg.deviceName,
           sizeof(cfg.deviceName) - 1);
+  strncpy(cfg.themeId, doc["themeId"] | cfg.themeId, sizeof(cfg.themeId) - 1);
   cfg.masterBrightness =
       clampInt(doc["masterBrightness"] | cfg.masterBrightness, 0, 255);
   cfg.stripCount = clampInt(doc["stripCount"] | cfg.stripCount, 1, kMaxStrips);
@@ -138,21 +154,21 @@ bool ConfigStore::load(Config& cfg) {
     a.sampleRate = clampInt(ao["sampleRate"] | a.sampleRate, 8000, 96000);
     a.fftSize = clampInt(ao["fftSize"] | a.fftSize, 256, 2048);
     a.hopSize = clampInt(ao["hopSize"] | a.hopSize, 64, a.fftSize);
-    a.gain = ao["gain"] | a.gain;
+    a.gain = validFloat(ao["gain"]) ? clampFloat(ao["gain"].as<float>(), 0.1f, 20.0f) : a.gain;
     a.normMode = clampInt(ao["normMode"] | a.normMode, 0, 1);
-    a.dbFloor = ao["dbFloor"] | a.dbFloor;
-    a.dbCeil = ao["dbCeil"] | a.dbCeil;
-    a.noiseGate = ao["noiseGate"] | a.noiseGate;
+    a.dbFloor = validFloat(ao["dbFloor"]) ? ao["dbFloor"].as<float>() : a.dbFloor;
+    a.dbCeil = validFloat(ao["dbCeil"]) ? ao["dbCeil"].as<float>() : a.dbCeil;
+    a.noiseGate = validFloat(ao["noiseGate"]) ? clampFloat(ao["noiseGate"].as<float>(), 0.0f, 0.9f) : a.noiseGate;
     a.smooth = ao["smooth"] | a.smooth;
-    a.attack = ao["attack"] | a.attack;
-    a.release = ao["release"] | a.release;
+    a.attack = validFloat(ao["attack"]) ? clampFloat(ao["attack"].as<float>(), 0.01f, 0.99f) : a.attack;
+    a.release = validFloat(ao["release"]) ? clampFloat(ao["release"].as<float>(), 0.005f, 0.99f) : a.release;
     a.beatDetect = ao["beatDetect"] | a.beatDetect;
-    a.beatSens = ao["beatSens"] | a.beatSens;
+    a.beatSens = validFloat(ao["beatSens"]) ? clampFloat(ao["beatSens"].as<float>(), 0.1f, 5.0f) : a.beatSens;
     a.beatMinGapMs = clampInt(ao["beatMinGapMs"] | a.beatMinGapMs, 50, 2000);
     a.beatLowBands = clampInt(ao["beatLowBands"] | a.beatLowBands, 1, kMaxBands);
-    a.ampGain = ao["ampGain"] | a.ampGain;
-    a.ampDbFloor = ao["ampDbFloor"] | a.ampDbFloor;
-    a.ampDbCeil = ao["ampDbCeil"] | a.ampDbCeil;
+    a.ampGain = validFloat(ao["ampGain"]) ? clampFloat(ao["ampGain"].as<float>(), 0.1f, 10.0f) : a.ampGain;
+    a.ampDbFloor = validFloat(ao["ampDbFloor"]) ? ao["ampDbFloor"].as<float>() : a.ampDbFloor;
+    a.ampDbCeil = validFloat(ao["ampDbCeil"]) ? ao["ampDbCeil"].as<float>() : a.ampDbCeil;
     if (ao["bands"].is<JsonArray>()) {
       deserializeBands(ao["bands"].as<JsonArray>(), a);
     }
@@ -216,10 +232,9 @@ bool ConfigStore::load(Config& cfg) {
     }
     cfg.artnet.universe = an["universe"] | cfg.artnet.universe;
     cfg.artnet.audioReactive = an["audioReactive"] | cfg.artnet.audioReactive;
-    cfg.artnet.panSpeed = an["panSpeed"] | cfg.artnet.panSpeed;
-    cfg.artnet.tiltSpeed = an["tiltSpeed"] | cfg.artnet.tiltSpeed;
-    cfg.artnet.colorSensitivity =
-        an["colorSensitivity"] | cfg.artnet.colorSensitivity;
+    cfg.artnet.panSpeed = validFloat(an["panSpeed"]) ? clampFloat(an["panSpeed"].as<float>(), 0.0f, 1.0f) : cfg.artnet.panSpeed;
+    cfg.artnet.tiltSpeed = validFloat(an["tiltSpeed"]) ? clampFloat(an["tiltSpeed"].as<float>(), 0.0f, 1.0f) : cfg.artnet.tiltSpeed;
+    cfg.artnet.colorSensitivity = validFloat(an["colorSensitivity"]) ? clampFloat(an["colorSensitivity"].as<float>(), 0.0f, 2.0f) : cfg.artnet.colorSensitivity;
   }
 
   if (doc["fixtures"].is<JsonArray>()) {
@@ -241,6 +256,7 @@ bool ConfigStore::load(Config& cfg) {
 void buildDoc(const Config& cfg, JsonDocument& doc) {
   doc["version"] = kConfigVersion;
   doc["deviceName"] = cfg.deviceName;
+  doc["themeId"] = cfg.themeId;
   doc["masterBrightness"] = cfg.masterBrightness;
   doc["stripCount"] = cfg.stripCount;
   doc["micSck"] = cfg.micSck;

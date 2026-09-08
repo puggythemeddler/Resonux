@@ -6,18 +6,16 @@ meaningful automated tests cheap.
 
 ## 1. Host unit tests (x86, CI-friendly)
 
-Targets: DSP core (`band aggregation`, `dB→normalise`, `noise gate`,
-`attack/release smoother`), `BeatDetector`, and every `Effect`
-(render into an in-memory `LedFrame`, sample a few pixels, no hardware).
+**Implemented**: `pio test -e native` runs 21 Unity assertions (add a
+host compiler like MinGW on Windows; gcc is preinstalled on the CI runner)
+against the pure headers — `util/Rgb.h` (HSL→RGB, palettes, blend/scale/
+luma/clamps), `util/Smoother.h`, `effects/EffectUtil.h`, `effects/LedFrame.h`,
+`audio/AudioFrame.h`, and real effects (`BassPulseEffect`, `GradientEffect`).
 
-- Build flag `UNIMLED_TESTING=1` compiles `audio/`, `effects/`, `util/` without
-  Arduino deps (guard Arduino-only headers behind the flag).
-- `LedFrame` and the effect interfaces stay pure — effects never touch
-  `LEDDriver` or FastLED (already enforced by design, verified at compile).
-- A tiny assertion framework (or just `assert` + a main) run by `pio test -e
-  native`; later wired into CI on every commit.
-- Test stimuli are files (WAV/PCM) under `firmware/test/data/` and generated
-  in-process (sine sweeps, impulses, noise, "kick-drum" synth).
+Planned extensions: `BeatDetector`, every remaining `Effect` (render into an
+in-memory `LedFrame`, sample a few pixels), and DSP band aggregation. `LedFrame`
+and the effect interfaces stay pure — effects never touch `LEDDriver` or
+FastLED (already enforced by design, verified at compile).
 
 ## 2. Python audio-analysis lab (`tools/python/`)
 

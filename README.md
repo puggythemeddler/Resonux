@@ -18,7 +18,7 @@ over Art-Net.
 |---|---|
 | **C++ (C++17)** | ESP32-S3 firmware — PlatformIO + Arduino-ESP32 core 2.0.x |
 | **Python 3** | dev tooling: audio-analysis lab, PSU/wire sizing |
-| **HTML / CSS / TypeScript** | web dashboard (Phase 4, planned) |
+| **HTML / CSS / TypeScript** | web dashboard (Vite + React, implemented) |
 
 Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
 (config).
@@ -33,6 +33,10 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   Frequency→Color, Rainbow Music, VU Meter, Energy Pulse, Running Wave,
   High-Frequency Spark, Bass→Treble Gradient, Beat Ripple, Music Wave,
   Color Energy, Custom Mapping.
+- **Themes** — data-driven lighting personalities persisted to `/themes.json`
+  on LittleFS: global palette, brightness/saturation, per-band response and
+  animation character. Apply globally or per strip, and edit from the
+  dashboard; built-ins reinstall on reset.
 - **LED drivers (interchangeable)**:
 
   | Category | Examples |
@@ -106,6 +110,7 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 ```bash
 cd firmware
 pio run                          # compile (no hardware needed)
+pio test -e native               # host-side unit tests (no hardware, ~21 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
@@ -119,6 +124,13 @@ npm install
 npm run build                    # outputs firmware/data/web (flashed to SPIFFS)
 cd ../firmware
 pio run -t uploadfs              # flash the dashboard + config.json
+```
+
+Run the dashboard **without hardware** (mock `*/api` server):
+
+```bash
+cd web
+npm run dev                      # http://localhost:5173 — simulated device
 ```
 
 First run creates **AP-mode** defaults (`Resonux` hotspot, no password). Join
@@ -136,6 +148,9 @@ from any device on the same network:
 
 - **Live** — real-time spectrum bars, amplitude/bass/mid/treble levels,
   beat indicator, system stats (uptime, heap, FPS), global tuning sliders.
+- **Themes** — browse and edit the device's lighting themes (palette swatches,
+  brightness/saturation, response + animation curves); select globally or per
+  strip, create/edit/delete non-built-ins, reset defaults.
 - **Configuration** — view/edit the full `config.json` and save (reboots).
 - **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
   from the Arduino IDE (ArduinoOTA is active too).
@@ -179,12 +194,15 @@ bass/mid/treble, beat, free heap).
 
 ## Testing & tooling
 
+- `pio test -e native` — **host-side unit tests** for the pure logic (colour
+  math, palettes, smoothing, effect rendering, LED frame ops); runs in CI.
 - `python tools/python/analyze.py song.mp3` — replicate the band/beat pipeline
   in NumPy; produces waveform/spectrum/band/beat/LED-sim visualizations
   (`docs/TESTING.md`).
 - `python tools/python/power_calculator.py` — PSU/wire/fuse sizing
   (`docs/HARDWARE.md §4`).
-- Host-side DSP/effect unit tests planned (CI-friendly).
+- `cd web && npm run dev` — dashboard **simulator** (mock `/api` endpoints,
+  no hardware required).
 
 ## Documentation
 
@@ -200,10 +218,12 @@ bass/mid/treble, beat, free heap).
 
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
-drivers + runtime) plus Art-Net DMX output is implemented and **compiles
-cleanly for ESP32-S3** (~28 % RAM / ~46 % flash at the default config);
-hardware bring-up is pending parts arrival (see `docs/HARDWARE.md`), with the
-web dashboard planned for Phase 4.
+drivers + runtime) plus Art-Net DMX output, the **web dashboard** (Live /
+Themes / Configuration / OTA tabs), **themes** (device-side + dashboard
+editing), **OTA**, **WifiManager**, and **host-side unit
+tests in CI** are implemented and compile cleanly for ESP32-S3 (~37 % RAM /
+~56 % flash at the default config); hardware bring-up is pending parts arrival
+(see `docs/HARDWARE.md`).
 
 ## License / ownership
 

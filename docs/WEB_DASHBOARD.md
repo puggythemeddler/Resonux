@@ -2,12 +2,17 @@
 
 Status: **implemented in `web/`** — Vite + React + TS SPA, embedded into
 `firmware/data/web/` and served by `src/web/WebUi` on the device. Live,
-Configuration, and Firmware Update tabs are working. Uses short-interval
+Themes, Configuration, and Firmware Update tabs are working. Uses short-interval
 `fetch` polling of `/api/frame` for the live spectrum (SSE remains a future
 optimization).
 
 Served locally by the ESP32. No cloud account, no external CDN, works fully
 offline on the controller's own Wi-Fi AP.
+
+`npm run dev` runs a **simulator**: a Vite dev-middleware mock
+(`web/mockDevPlugin.ts`) serves `*/api/status`, `*/api/frame`, `*/api/config`
+(GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/reboot`
+and `*/api/ota`, so the whole UI can be developed and demoed with no hardware.
 
 ## 1. Stack & why
 
@@ -27,8 +32,7 @@ so it embeds into LittleFS and loads instantly on the AP network.
 ## 2. Deployment topologies
 
 ```
-   dev:  Vite dev server ──┐
-                           ├──► browser   (proxy /api → ESP32 IP:80)
+   dev:  Vite dev server + mock /api  ──► browser (simulator, no hardware)
    prod: npm run build ──► firmware/data/web/ ──► SPIFFS (uploadfs)
          ESP32 serves static assets + REST on :80
 ```
@@ -51,10 +55,23 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `POST /api/reboot`, `GET /api/info` | system |
 | `GET /stream` | SSE: `AudioFrame` (10–20 Hz) + strip preview frames (lower rate) + status |
 | `POST /api/ota` (Ph 8) | OTA upload |
+| `GET /api/themes` | list themes `{themes:[ThemeDef], active}` |
+| `PUT /api/themes` | upsert a theme (`id` required, builtin ids are validated) |
+| `DELETE /api/themes?id=…` | delete a non-builtin theme |
+| `POST /api/themes/select` `{id}` / `{id,strip}` | apply theme globally or per strip |
+| `POST /api/themes/reset` | reinstall the default built-in themes |
+
+`ThemeDef` wire shape (`ThemeEngine::encode`/`decode`): `id`, `name`,
+`builtin`, `brightness` (0–100), `saturation` (0–255), `palette` (`#RRGGBB`
+hex strings), `response` (`{bass,mid,treble,beat,amp}`), `animation`
+(`{movement,pulse,sparkle,smoothing}`).
 
 - Admin token: `X-Admin` header on all state-changing endpoints.
 - All numeric/enum inputs validated on firmware (range + pin whitelist) before
-  commit.
+  commit. `ConfigStore::load` clamps every numeric field (ints and floats) to
+  sane bounds, rejects non-finite floats, bounds string fields, and returns
+  `false` for configs claiming a *newer* schema version — so a downgraded
+  firmware never clobbers a newer config.
 
 ## 4. Dashboard sections (spec §21)
 
@@ -69,6 +86,7 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `/presets` Presets | save/load/duplicate/delete; gallery (Party, Bass Heavy, Spectrum, Rainbow, Club, Chill, Rock, EDM, Vocal, Beat, Ambient, Custom) |
 | `/power` Power | PSU sizing helper, per-strip current estimate, limits |
 | `/system` System | device name, Wi-Fi mode/AP config, OTA, reboot, firmware info |
+| `/themes` Themes | implemented: palette swatches + brightness/saturation, response + animation curves; select (global/per-strip), create/edit/delete non-built-ins, reset defaults |
 | `/diagnostics` Diagnostics | mic detect, audio level, FFT ok, LED-driver ok, memory, CPU, config version, errors (spec §31) |
 
 ## 5. Live data & preview

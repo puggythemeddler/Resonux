@@ -23,6 +23,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Unit tests (native)
+        run: pio test -e native
+        working-directory: firmware
+
       - name: Build
         run: pio run
         working-directory: firmware

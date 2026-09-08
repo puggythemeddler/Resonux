@@ -27,7 +27,10 @@ public:
   virtual ~Effect() {}
 
   virtual const char* name() const = 0;
-  virtual void begin(LedFrame& frame, const EffectParams& p) {}
+  virtual void begin(LedFrame& frame, const EffectParams& p) {
+    (void)frame;
+    (void)p;
+  }
   virtual void render(LedFrame& frame, const AudioFrame& audio,
                       const EffectParams& p) = 0;
 };

@@ -3,10 +3,12 @@
 #include "config/ConfigDefs.h"
 #include "effects/Effect.h"
 #include "led/LEDTypes.h"
+#include "theme/Theme.h"
 #include <stdint.h>
 
 struct StripConfig {
   char    name[16] = "Strip 1";
+  char    themeId[Themes::kMaxIdLen] = "";  // "" => follow global theme
   int     driverType = DRIVER_ADDRESSABLE;
   int     chipset = CHIP_WS2812;
   int     colorOrder = ORDER_GRB;
@@ -77,6 +79,7 @@ struct NetworkConfig {
 
 struct Config {
   char               deviceName[24] = "Music-LED";
+  char               themeId[Themes::kMaxIdLen] = "classic";
   int                micSck = 4;
   int                micWs = 5;
   int                micData = 6;

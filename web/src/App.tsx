@@ -29,7 +29,40 @@ type Frame = {
 
 type AnyConfig = Record<string, unknown>
 
-type Tab = 'live' | 'config' | 'ota'
+type Theme = {
+  id: string
+  name: string
+  builtin?: boolean
+  brightness: number
+  saturation: number
+  palette: string[]
+  response?: { bass: number; mid: number; treble: number; beat: number; amp: number }
+  animation?: { movement: number; pulse: number; sparkle: number; smoothing: number }
+}
+
+type ThemeDraft = {
+  id: string
+  name: string
+  brightness: number
+  saturation: number
+  palette: string[]
+  bass: number
+  mid: number
+  treble: number
+  beat: number
+  amp: number
+  movement: number
+  pulse: number
+  sparkle: number
+  smoothing: number
+}
+
+type ThemesData = {
+  themes: Theme[]
+  active: string
+}
+
+type Tab = 'live' | 'themes' | 'config' | 'ota'
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000)
@@ -52,6 +85,97 @@ function Spectrum({ frame }: { frame: Frame | null }) {
           className={peaks[i] > 0.85 ? 'peak' : ''}
         />
       ))}
+    </div>
+  )
+}
+
+function FieldSlider({ label, value, min, max, step, onChange }: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="row">
+      <label>{label}</label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="num">{value.toFixed(2)}</span>
+    </div>
+  )
+}
+
+function ThemeEditor({ draft, onChange, onSave, onCancel }: {
+  draft: ThemeDraft
+  onChange: (d: ThemeDraft) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const set = <K extends keyof ThemeDraft>(k: K, v: ThemeDraft[K]) => onChange({ ...draft, [k]: v })
+  const setPal = (i: number, v: string) => set('palette', draft.palette.map((h, j) => (j === i ? v : h)))
+  const addPal = () => set('palette', [...draft.palette.slice(0, 7), '#FFFFFF'])
+  const delPal = () => set('palette', draft.palette.slice(0, -1))
+  const fld = (label: string, child: React.ReactNode) => (
+    <label className="fld">
+      {label}
+      {child}
+    </label>
+  )
+  return (
+    <div className="card editor-card">
+      <h3>{draft.id ? `Edit ${draft.id}` : 'New theme'}</h3>
+      <div className="grid-2">
+        {fld('Name', <input type="text" value={draft.name} onChange={(e) => set('name', e.target.value)} />)}
+        {fld('Id', <input type="text" value={draft.id} onChange={(e) => set('id', e.target.value)} />)}
+        {fld('Brightness %', <input type="number" min={0} max={100} value={draft.brightness} onChange={(e) => set('brightness', Math.max(0, Math.min(100, Number(e.target.value))))} />)}
+        {fld('Saturation 0–255', <input type="number" min={0} max={255} value={draft.saturation} onChange={(e) => set('saturation', Math.max(0, Math.min(255, Number(e.target.value))))} />)}
+      </div>
+
+      <fieldset>
+        <legend>Palette (hex #RRGGBB)</legend>
+        <div className="pal-editor">
+          {draft.palette.slice(0, 8).map((h, i) => (
+            <span key={i} className="pal-row">
+              <input type="text" value={h} spellCheck={false} onChange={(e) => setPal(i, e.target.value)} />
+              <input type="color" value={h} onChange={(e) => setPal(i, e.target.value)} />
+            </span>
+          ))}
+        </div>
+        <div className="actions" style={{ marginTop: 8 }}>
+          {draft.palette.length < 8 && <button onClick={addPal}>＋ add colour</button>}
+          {draft.palette.length > 1 && <button onClick={delPal}>− remove</button>}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Response (0–2)</legend>
+        <FieldSlider label="Bass" value={draft.bass} min={0} max={2} step={0.05} onChange={(v) => set('bass', v)} />
+        <FieldSlider label="Mid" value={draft.mid} min={0} max={2} step={0.05} onChange={(v) => set('mid', v)} />
+        <FieldSlider label="Treble" value={draft.treble} min={0} max={2} step={0.05} onChange={(v) => set('treble', v)} />
+        <FieldSlider label="Beat" value={draft.beat} min={0} max={2} step={0.05} onChange={(v) => set('beat', v)} />
+        <FieldSlider label="Amp" value={draft.amp} min={0} max={2} step={0.05} onChange={(v) => set('amp', v)} />
+      </fieldset>
+
+      <fieldset>
+        <legend>Animation (0–1)</legend>
+        <FieldSlider label="Movement" value={draft.movement} min={0} max={1} step={0.05} onChange={(v) => set('movement', v)} />
+        <FieldSlider label="Pulse" value={draft.pulse} min={0} max={1} step={0.05} onChange={(v) => set('pulse', v)} />
+        <FieldSlider label="Sparkle" value={draft.sparkle} min={0} max={1} step={0.05} onChange={(v) => set('sparkle', v)} />
+        <FieldSlider label="Smoothing" value={draft.smoothing} min={0} max={1} step={0.05} onChange={(v) => set('smoothing', v)} />
+      </fieldset>
+
+      <div className="actions">
+        <button className="primary" onClick={onSave}>Save theme</button>
+        <button onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   )
 }
@@ -80,6 +204,9 @@ export default function App() {
 
   const [sensitivity, setSensitivity] = useState(50)
   const [brightness, setBrightness] = useState(100)
+  const [themes, setThemes] = useState<ThemesData | null>(null)
+  const [themesErr, setThemesErr] = useState('')
+  const [editing, setEditing] = useState<ThemeDraft | null>(null)
   const sensitivityRef = useRef(sensitivity)
   const brightnessRef = useRef(brightness)
   sensitivityRef.current = sensitivity
@@ -129,6 +256,121 @@ export default function App() {
   const reboot = async () => {
     await fetch('/api/reboot', { method: 'POST' })
     setOtaMsg('Rebooting…')
+  }
+
+  const loadThemes = useCallback(async () => {
+    try {
+      const r = await fetch('/api/themes')
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      setThemes((await r.json()) as ThemesData)
+      setThemesErr('')
+    } catch (e) {
+      setThemesErr((e as Error).message)
+    }
+  }, [])
+
+  const selectTheme = async (id: string) => {
+    try {
+      const r = await fetch('/api/themes/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      await loadThemes()
+    } catch (e) {
+      setThemesErr((e as Error).message)
+    }
+  }
+
+  const deleteTheme = async (id: string) => {
+    try {
+      const r = await fetch('/api/themes?id=' + encodeURIComponent(id), { method: 'DELETE' })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      await loadThemes()
+    } catch (e) {
+      setThemesErr((e as Error).message)
+    }
+  }
+
+  const resetThemes = async () => {
+    try {
+      const r = await fetch('/api/themes/reset', { method: 'POST' })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      await loadThemes()
+    } catch (e) {
+      setThemesErr((e as Error).message)
+    }
+  }
+
+  const saveTheme = async (d: ThemeDraft) => {
+    const body = {
+      id: d.id.trim(),
+      name: d.name.trim() || d.id.trim(),
+      brightness: d.brightness,
+      saturation: d.saturation,
+      palette: d.palette.filter((h) => /^#[0-9a-fA-F]{6}$/.test(h)),
+      response: { bass: d.bass, mid: d.mid, treble: d.treble, beat: d.beat, amp: d.amp },
+      animation: { movement: d.movement, pulse: d.pulse, sparkle: d.sparkle, smoothing: d.smoothing },
+    }
+    try {
+      const r = await fetch('/api/themes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setEditing(null)
+      await loadThemes()
+    } catch (e) {
+      setThemesErr((e as Error).message)
+    }
+  }
+
+  const openTheme = (t: Theme) => {
+    const r = t.response ?? { bass: 1, mid: 1, treble: 1, beat: 1, amp: 1 }
+    const an = t.animation ?? { movement: 0.5, pulse: 0.5, sparkle: 0.3, smoothing: 0.3 }
+    setEditing({
+      id: t.id,
+      name: t.name,
+      brightness: t.brightness,
+      saturation: t.saturation,
+      palette: t.palette && t.palette.length ? t.palette : ['#FF0000', '#00FF00', '#0000FF'],
+      bass: r.bass,
+      mid: r.mid,
+      treble: r.treble,
+      beat: r.beat,
+      amp: r.amp,
+      movement: an.movement,
+      pulse: an.pulse,
+      sparkle: an.sparkle,
+      smoothing: an.smoothing,
+    })
+  }
+
+  const newTheme = () => {
+    const n = themes
+      ? themes.themes.reduce((mx, x) => (/^custom\d+$/.test(x.id) ? Math.max(mx, Number(x.id.slice(6)) || 0) : mx), 0) + 1
+      : 1
+    setEditing({
+      id: 'custom' + n,
+      name: '',
+      brightness: 100,
+      saturation: 255,
+      palette: ['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'],
+      bass: 1,
+      mid: 1,
+      treble: 1,
+      beat: 1,
+      amp: 1,
+      movement: 0.5,
+      pulse: 0.5,
+      sparkle: 0.3,
+      smoothing: 0.3,
+    })
   }
 
   const applyGlobals = useCallback(async (rev: number, bright: number) => {
@@ -210,9 +452,9 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        {(['live', 'config', 'ota'] as Tab[]).map((t) => (
+        {(['live', 'themes', 'config', 'ota'] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'live' ? 'Live' : t === 'config' ? 'Configuration' : 'Firmware Update'}
+            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'config' ? 'Configuration' : 'Firmware Update'}
           </button>
         ))}
       </nav>
@@ -261,6 +503,68 @@ export default function App() {
               <span>{brightness}</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'themes' && (
+        <div className="grid">
+          <div className="card" style={{ gridColumn: '1 / -1' }}>
+            <div className="row">
+              <h3 style={{ margin: 0 }}>Lighting Themes</h3>
+              <div className="actions" style={{ margin: 0 }}>
+                <button onClick={() => loadThemes()}>Reload</button>
+                <button className="primary" onClick={newTheme}>＋ New theme</button>
+                <button className="danger" onClick={resetThemes}>Reset defaults</button>
+              </div>
+            </div>
+            {themesErr && <div className="err">{themesErr}</div>}
+            {!themes && !themesErr && <p className="muted">Loading…</p>}
+            {themes && themes.themes.length === 0 && !themesErr && (
+              <p className="muted">No themes on the device yet.</p>
+            )}
+            {themes && themes.themes.length > 0 && (
+              <div className="theme-grid">
+                {themes.themes.map((t) => (
+                  <div key={t.id} className={`theme-card ${t.id === themes.active ? 'active' : ''}`}>
+                    <div className="theme-head">
+                      <strong>{t.name}</strong>
+                      {t.builtin && <span className="badge">builtin</span>}
+                    </div>
+                    <div className="swatches">
+                      {(t.palette ?? []).slice(0, 8).map((h, i) => (
+                        <span key={i} style={{ background: h }} />
+                      ))}
+                    </div>
+                    <div className="meta">
+                      <span>bri {t.brightness}%</span>
+                      <span>sat {t.saturation}</span>
+                      <span>{t.id}</span>
+                    </div>
+                    <div className="actions">
+                      <button
+                        className={t.id === themes.active ? 'primary' : undefined}
+                        onClick={() => selectTheme(t.id)}
+                      >
+                        {t.id === themes.active ? '✓ Active' : 'Select'}
+                      </button>
+                      <button onClick={() => openTheme(t)}>Edit</button>
+                      {!t.builtin && (
+                        <button className="danger" onClick={() => deleteTheme(t.id)}>Delete</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {editing && (
+            <ThemeEditor
+              draft={editing}
+              onChange={setEditing}
+              onSave={() => saveTheme(editing)}
+              onCancel={() => setEditing(null)}
+            />
+          )}
         </div>
       )}
 

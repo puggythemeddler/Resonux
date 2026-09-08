@@ -24,6 +24,11 @@ private:
   void sendConfig();
   void handleConfigPut();
   void handleReboot();
+  void sendThemes();
+  void handleThemesPut();
+  void handleThemesDelete();
+  void handleThemesSelect();
+  void handleThemesReset();
   String mimeFor(const String& path);
 
   App* _app = nullptr;
