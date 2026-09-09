@@ -132,6 +132,30 @@ slave stays lit if the master is alive and mutes/times out per
 `masterAlive` when it vanishes. Kill the master → slave drops frames within
 the configured timeout, then recovers when it returns.
 
+## 12. System controls (Phase 11)
+
+1. `/api/system/status` returns `{ok:true, state:"running", action:"none"}`.
+2. **Live tuning, no reboot:** change master brightness, screen backlight and
+   timeout via the web System tab / Global Tuning sliders (or
+   `POST /api/state/brightness|backlight|timeout`). Serial stays boot-clean
+   (no reboot), values survive a power cycle (persisted `display`/tuning
+   config).
+3. **Restart:** `POST /api/system/restart` (or the web Restart button behind
+   its confirmation modal) — serial logs the shutdown sequence, all LED/DMX
+   outputs go silent *before* reset, the device boots fresh and the dashboard
+   reconnects (`Device offline — waiting.` → `Running`).
+4. **Safe Power Off:** `POST /api/system/power-off` (or the panel button) —
+   backlight off, `wakePin ≥ 0` arms `esp_sleep_enable_ext0_wakeup()` on an
+   **RTC GPIO (0–21)**, then deep sleep. Without a `wakePin` the reset (EN)
+   button wakes it. Measure standby current to confirm the strip rail is off.
+5. **LVGL System screen mirrors the web:** backlight slider + timeout select
+   map to `/api/state*`; Restart / Safe Power Off overlays confirm and silence
+   outputs first.
+
+**Pass:** outputs never glitch during restart/power-off; live tuning never
+reboots; wake works per `wakePin` config; both UIs share the same
+`SystemMode` source of truth.
+
 ## Safety / power notes
 
 - Common ground between PSU, strips and S3; never run strip current through the

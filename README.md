@@ -123,7 +123,7 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 cd firmware
 pio run                          # compile default sizing (no touchscreen)
 pio run -e esp32-s3-ui           # build with LVGL touchscreen UI
-pio test -e native               # host-side unit tests (no hardware, 37 tests)
+pio test -e native               # host-side unit tests (no hardware, 43 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```

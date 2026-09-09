@@ -54,7 +54,8 @@ ShuttingDown ── complete() ─► Restarting | Sleeping (terminal; device re
 6. ~500 ms grace period lets the web client's in-flight POSTs ack.
 7. **Restart** → `ESP.restart()`.
    **Power off** → screen backlight off, optional `wakePin >= 0` arms
-   `esp_sleep_enable_ext0_wakeup()`, then `esp_deep_sleep_start()`.
+   `esp_sleep_enable_ext0_wakeup()` (RTC GPIO 0–21 only, see `docs/HARDWARE.md`),
+   then `esp_deep_sleep_start()`.
 
 > Honest semantics: Safe Power Off enters **deep sleep** — it does not cut
 > the physical supply. Without a `wakePin` configured the device needs a

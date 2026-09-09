@@ -213,6 +213,11 @@ Addressable pins are compiled into the firmware: data `1,2,3,5-21,33-42,47,48`
 these sets makes `begin()` fail cleanly to avoid driving an uninstantiated
 output.
 
+`display.wakePin` (Safe Power Off) uses `esp_sleep_enable_ext0_wakeup()` —
+that only works on **RTC GPIOs 0–21**, so choose a wake pin inside that range
+(e.g. GPIO1/2, already in the addressable data set). GPIO48/47 are **not**
+RTC-capable and won't wake from deep sleep.
+
 ---
 
 ## 8. Checklist before applying power

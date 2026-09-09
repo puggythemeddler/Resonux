@@ -6,11 +6,13 @@ meaningful automated tests cheap.
 
 ## 1. Host unit tests (x86, CI-friendly)
 
-**Implemented**: `pio test -e native` runs 21 Unity assertions (add a
-host compiler like MinGW on Windows; gcc is preinstalled on the CI runner)
-against the pure headers — `util/Rgb.h` (HSL→RGB, palettes, blend/scale/
+**Implemented**: `pio test -e native` runs 43 Unity assertions across 3 host
+suites — `test_logic` (colour math, smoothing, effects), `test_sync`
+(multicast clock/packet), `test_system` (restart/power-off state machine) —
+against the pure layers: `util/Rgb.h` (HSL→RGB, palettes, blend/scale/
 luma/clamps), `util/Smoother.h`, `effects/EffectUtil.h`, `effects/LedFrame.h`,
-`audio/AudioFrame.h`, and real effects (`BassPulseEffect`, `GradientEffect`).
+`audio/AudioFrame.h`, and real effects (`BassPulseEffect`, `GradientEffect`),
+plus `firmware/src/system/SystemMode.h`.
 
 Planned extensions: `BeatDetector`, every remaining `Effect` (render into an
 in-memory `LedFrame`, sample a few pixels), and DSP band aggregation. `LedFrame`
