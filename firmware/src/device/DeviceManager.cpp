@@ -69,7 +69,7 @@ bool DeviceStore::load(DeviceRegistry& reg) {
                                      STATUS_COUNT - 1);
     d.source = (DiscoverySource)clampTo(o["source"] | (int)SRC_UNKNOWN, 0,
                                         SRC_COUNT - 1);
-    d.persisted = o["persisted"] | true;
+    d.persisted = o["persisted"] | false;
     d.needsConditioning = o["needsConditioning"] | false;
     strncpy(d.note, (const char*)(o["note"] | ""), sizeof(d.note) - 1);
     d.lastSeenMs = 0;
