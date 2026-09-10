@@ -3,6 +3,7 @@
 #include "audio/AudioAnalyzer.h"
 #include "audio/AudioFrame.h"
 #include "audio/AudioSource.h"
+#include "device/DeviceManager.h"
 #include "config/Config.h"
 #include "display/DisplayManager.h"
 #include "network/WifiManager.h"
@@ -23,11 +24,19 @@ public:
   bool begin();
 
   const Config& config() const { return _config; }
+  Config&       config() { return _config; }
   uint32_t audioFrames() const { return _framesCount; }
   float audioFps() const { return _analyzer ? _analyzer->fps() : 0.0f; }
   const ArtNetNode* artnet() const { return _artnet; }
   const SyncNode* sync() const { return _sync; }
   const char* wifiModeName() const { return WifiManager::instance().modeName(); }
+
+  DeviceManager& devices() { return _devices; }
+  int  audioSource() const { return _config.audioSource; }
+  bool setAudioSource(int kind);             // persists; applied at next boot
+  int  preferredSource() const { return _config.preferredSource; }
+  bool setPreferredSource(int kind);         // persists (no reboot semantics)
+  bool setAutoSelect(bool on);               // persists
 
   bool takeFrame(AudioFrame& out);
   bool setMasterBrightness(uint8_t value);   // live, persists (no reboot)
@@ -65,6 +74,7 @@ private:
   Config          _config;
   AudioSource*    _source = nullptr;
   AudioAnalyzer*  _analyzer = nullptr;
+  DeviceManager   _devices;
   StripRuntime*   _strips[kMaxStrips] = {nullptr};
   int             _stripCount = 0;
 

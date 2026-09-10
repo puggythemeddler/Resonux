@@ -1,5 +1,7 @@
 #include "runtime/App.h"
 #include "audio/I2SMicSource.h"
+#include "audio/SourceSelector.h"
+#include "audio/TestToneSource.h"
 #include "config/ConfigDefaults.h"
 #include "config/ConfigStore.h"
 #include "effects/EffectRegistry.h"
@@ -52,6 +54,10 @@ bool App::begin() {
     logBoot("wifi", "disabled (%s)", wifi.lastError());
   }
 
+  _devices.begin(_config);  // needs the radio up to bind the responder
+  logBoot("device", "manager: %d rows, responder=%d", _devices.count(),
+          _devices.responderUp());
+
   _web = new WebUi();
   if (_web->begin(*this)) {
     logBoot("web", "dashboard + OTA up");
@@ -63,8 +69,37 @@ bool App::begin() {
 
   const bool slaveRole =
       _config.sync.enabled && _config.sync.role == SYNC_SLAVE;
+
+  // Boot-time audio source: honour the persisted source, or let the
+  // hysteresis-aware SourceSelector pick preferred-vs-fallback when auto is
+  // enabled. Live switching is intentionally deferred — the analyzer pipeline
+  // is built once here, so a source change is applied cleanly on the next boot.
+  const bool micPresent = !slaveRole && _config.micData >= 0;
+  int bootSource = _config.audioSource;
+  if (_config.autoSelectSource) {
+    dev::SourceSelector sel;
+    sel.configure(true, (SourceKind)_config.preferredSource,
+                  (SourceKind)_config.fallbackSource, (SourceKind)_config.audioSource);
+    uint32_t mask = dev::sourceMaskOf(SOURCE_TEST);
+    if (micPresent) mask |= dev::sourceMaskOf(SOURCE_MIC);
+    bootSource = (int)sel.update(0, mask);
+    logBoot("audio", "auto-select: source=%s", sourceKindIdent((SourceKind)bootSource));
+  }
+
+  const bool testTone = bootSource == SOURCE_TEST;
   if (slaveRole) {
     logBoot("audio", "mic skipped (sync slave - frames arrive over network)");
+  } else if (testTone) {
+    _source = new TestToneSource(_config.audio.sampleRate);
+    logBoot("audio", "test-tone source active @ %.0f Hz",
+            _config.audio.sampleRate);
+    _analyzer = new AudioAnalyzer(_config.audio, _source);
+    if (!_analyzer->begin()) {
+      logBoot("audio", "analyzer init FAILED");
+      return false;
+    }
+  } else if (bootSource == SOURCE_NONE) {
+    logBoot("audio", "no input selected (source=none) - lights idle");
   } else {
     MicPins mic = {_config.micSck, _config.micWs, _config.micData};
     _source = new I2SMicSource(mic, _config.audio.sampleRate);
@@ -170,6 +205,23 @@ bool App::setStripEffect(int strip, int effectId) {
 bool App::setTheme(const char* id) {
   if (!id || !ThemeEngine::instance().apply(id)) return false;
   strncpy(_config.themeId, id, sizeof(_config.themeId) - 1);
+  return ConfigStore::save(_config);
+}
+
+bool App::setAudioSource(int kind) {
+  if (kind < SOURCE_NONE || kind >= SOURCE_COUNT) return false;
+  _config.audioSource = kind;
+  return ConfigStore::save(_config);
+}
+
+bool App::setPreferredSource(int kind) {
+  if (kind < SOURCE_NONE || kind >= SOURCE_COUNT) return false;
+  _config.preferredSource = kind;
+  return ConfigStore::save(_config);
+}
+
+bool App::setAutoSelect(bool on) {
+  _config.autoSelectSource = on;
   return ConfigStore::save(_config);
 }
 
@@ -293,6 +345,7 @@ void App::ledLoop() {
   AudioFrame f;
   takeFrame(f);
   uint32_t now = millis();
+  _devices.tick(now);
 
   DisplayManager& disp = DisplayManager::instance();
   TouchUi& ui = TouchUi::instance();

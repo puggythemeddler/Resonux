@@ -2,9 +2,9 @@
 
 Status: **implemented in `web/`** — Vite + React + TS SPA, embedded into
 `firmware/data/web/` and served by `src/web/WebUi` on the device. Live,
-Themes, Configuration, and Firmware Update tabs are working. Uses short-interval
-`fetch` polling of `/api/frame` for the live spectrum (SSE remains a future
-optimization).
+Themes, Devices & Sources, Configuration, and Firmware Update tabs are
+working. Uses short-interval `fetch` polling of `/api/frame` for the live
+spectrum (SSE remains a future optimization).
 
 Served locally by the ESP32. No cloud account, no external CDN, works fully
 offline on the controller's own Wi-Fi AP.
@@ -13,9 +13,10 @@ offline on the controller's own Wi-Fi AP.
 (`web/mockDevPlugin.ts`) serves `*/api/status`, `*/api/frame`, `*/api/config`
 (GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/state`
 (+ `brightness`/`sensitivity`/`backlight`/`timeout`/`effect`),
-`*/api/system/*` (status/restart/power-off, with a simulated offline window on
-restart), `*/api/reboot` and `*/api/ota`, so the whole UI can be developed and
-demoed with no hardware.
+`*/api/devices` (GET + `scan`), `*/api/device` (GET/POST/DELETE), `*/api/audio/sources` 
+(GET) + `*/api/audio/source` (POST), `*/api/system/*` (status/restart/power-off,
+with a simulated offline window on restart), `*/api/reboot` and `*/api/ota`, so
+the whole UI can be developed and demoed with no hardware.
 
 ## 1. Stack & why
 

@@ -111,6 +111,29 @@ select, input[type=text], input[type=number] {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 9px; font-size: 13px;
 }
+
+/* ---- devices & sources ---- */
+.device-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.device-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+}
+.device-main { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; }
+.device-id { color: var(--muted); font-size: 11.5px; font-family: ui-monospace, monospace; }
+.caps-cell { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); background: var(--panel);
+}
+.device-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.device-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.device-edit { flex: 1 1 100%; border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 2px; }
+.warn-hint { color: var(--amber); font-size: 11.5px; }
+.badge.dev-detected, .badge.dev-needs_investigation { border-color: var(--amber); color: var(--amber); }
+.badge.dev-compatible { border-color: var(--accent); color: var(--accent); }
+.badge.dev-safe_to_connect, .badge.dev-configured { border-color: var(--green); color: var(--green); font-weight: 600; }
+.badge.cond { border-color: var(--amber); color: var(--amber); }
+.badge.prof { border-color: var(--accent-2); color: var(--accent-2); }
 fieldset { border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; }
 legend { color: var(--muted); font-size: 11px; padding: 0 6px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }

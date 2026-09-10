@@ -7,6 +7,11 @@ const DEFAULT_CONFIG: Record<string, unknown> = {
   version: 1,
   deviceName: 'Resonux-SIM',
   masterBrightness: 255,
+  audioSource: 1,
+  autoSelectSource: false,
+  preferredSource: 1,
+  fallbackSource: 0,
+  themeTransitionMs: 500,
   stripCount: 1,
   micSck: 4,
   micWs: 5,
@@ -284,6 +289,38 @@ export default function mockDevPlugin(): Plugin {
   let mockTimeout = 60
   let mockSensitivity = 0.5
 
+  // ---- device registry + audio source sim ----------------------------------
+  const SOURCES = [
+    { id: 0, ident: 'none', label: 'No input' },
+    { id: 1, ident: 'mic', label: 'Microphone (INMP441)' },
+    { id: 2, ident: 'line_in', label: 'Line input' },
+    { id: 3, ident: 'usb_audio', label: 'USB audio' },
+    { id: 4, ident: 'bluetooth', label: 'Bluetooth audio' },
+    { id: 5, ident: 'network', label: 'Network audio' },
+    { id: 6, ident: 'device', label: 'Device audio' },
+    { id: 7, ident: 'test', label: 'Test tone' },
+  ]
+
+  const PROFILES = [
+    { id: 'resonux', name: 'Universal Controller', manufacturer: 'Resonux', deviceType: 'lighting-controller', needsConditioning: false },
+    { id: 'am006', name: 'AM-006', manufacturer: '(validation unit)', deviceType: 'multimedia-speaker', needsConditioning: true },
+    { id: 'inmp441_mic', name: 'Omnidirectional I2S Microphone', manufacturer: 'INMP441', deviceType: 'microphone', needsConditioning: false },
+    { id: 'led_onboard', name: 'LED Output', manufacturer: '(integrated)', deviceType: 'led-driver', needsConditioning: false },
+    { id: 'usb_audio', name: 'USB Audio Interface', manufacturer: 'Generic', deviceType: 'audio-interface', needsConditioning: false },
+    { id: 'bluetooth_speaker', name: 'Bluetooth Speaker', manufacturer: 'Generic', deviceType: 'speaker', needsConditioning: false },
+    { id: 'network_audio', name: 'Network Streamer', manufacturer: 'Generic', deviceType: 'network-audio', needsConditioning: false },
+    { id: 'touch_display', name: 'Touch Display', manufacturer: '(integrated)', deviceType: 'display', needsConditioning: false },
+    { id: 'dmx_fixture', name: 'DMX Fixture', manufacturer: 'Generic', deviceType: 'lighting-fixture', needsConditioning: false },
+  ]
+
+  let devices = [
+    { id: 'resonux:self', name: 'Resonux-SIM', profileId: 'resonux', connection: 'network', connectionLabel: 'Network', status: 'configured', statusLabel: 'Configured', source: 5, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['network', 'artnet', 'led_output', 'addressable_led', 'rgb_pwm', 'microphone', 'audio_input'] },
+    { id: 'local:mic', name: 'INMP441 microphone', profileId: 'inmp441_mic', connection: 'gpio', connectionLabel: 'GPIO', status: 'configured', statusLabel: 'Configured', source: 1, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['microphone', 'audio_input'] },
+    { id: 'local:led', name: 'Onboard LED strip', profileId: '', connection: 'gpio', connectionLabel: 'GPIO', status: 'configured', statusLabel: 'Configured', source: 6, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['led_output', 'addressable_led', 'rgb_pwm'] },
+  ]
+
+  let audioState = { source: 1, autoSelect: false, preferred: 1, fallback: 0 }
+
   return {
     name: 'resonux-mock-api',
     configureServer(server) {
@@ -482,6 +519,165 @@ export default function mockDevPlugin(): Plugin {
           activeThemeId = 'auto'
           stripThemes = []
           json(res, 200, { ok: true })
+          return
+        }
+
+        // ---- devices + audio source (mirrors firmware /api/devices* + /api/audio/*)
+        const devicesReply = (extra: Record<string, unknown> = {}) =>
+          json(res, 200, {
+            ok: true,
+            devices: devices.map((d) => ({ ...d })),
+            profiles: PROFILES.map((p) => ({ ...p })),
+            ...extra,
+          })
+
+        if (url === '/api/devices' && req.method === 'GET') {
+          devicesReply()
+          return
+        }
+
+        if (url === '/api/devices/scan') {
+          const found = devices.find((d) => d.id === 'wifi:resonux-sim2')
+          if (!found && devices.length < 16) {
+            devices.push({
+              id: 'wifi:resonux-sim2',
+              name: 'Resonux-SIM2',
+              profileId: '',
+              connection: 'network',
+              connectionLabel: 'Network',
+              status: 'detected',
+              statusLabel: 'Detected',
+              source: 5,
+              persisted: false,
+              needsConditioning: false,
+              note: '',
+              lastSeen: Date.now(),
+              caps: ['network', 'audio_input'],
+            })
+          } else if (found) {
+            found.lastSeen = Date.now()
+          }
+          devicesReply({ found: found ? 1 : 1, registered: devices.length })
+          return
+        }
+
+        if (url === '/api/device') {
+          const id = new URL(req.url ?? '', 'http://x').searchParams.get('id') ?? ''
+          if (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') {
+            const i = devices.findIndex((d) => d.id === id)
+            if (req.method === 'GET') {
+              if (i < 0) {
+                json(res, 404, { ok: false, error: 'not_found' })
+                return
+              }
+              devicesReply()
+              return
+            }
+            if (req.method === 'DELETE') {
+              if (id.startsWith('local:') || id.startsWith('resonux:')) {
+                json(res, 400, { ok: false, error: 'builtin_row' })
+                return
+              }
+              if (i < 0) {
+                json(res, 404, { ok: false, error: 'not_found' })
+                return
+              }
+              devices.splice(i, 1)
+              json(res, 200, { ok: true, deleted: true })
+              return
+            }
+            // POST: identify / configure
+            if (i < 0) {
+              json(res, 404, { ok: false, error: 'not_found' })
+              return
+            }
+            let raw = ''
+            req.on('data', (c) => (raw += c))
+            req.on('end', () => {
+              try {
+                const body = JSON.parse(raw) as Record<string, unknown>
+                const profileId = String(body.profileId ?? '')
+                const name = String(body.name ?? '')
+                const note = String(body.note ?? '')
+                const d = devices[i]
+                if (profileId) {
+                  const p = PROFILES.find((x) => x.id === profileId)
+                  if (!p) {
+                    json(res, 400, { ok: false, error: 'bad_request' })
+                    return
+                  }
+                  d.profileId = profileId
+                  d.needsConditioning = p.needsConditioning
+                  d.status = p.needsConditioning ? 'compatible' : 'safe_to_connect'
+                  d.statusLabel = p.needsConditioning ? 'Compatible' : 'Safe to connect'
+                  d.persisted = true
+                }
+                if (name) d.name = name
+                if (note) d.note = note
+                json(res, 200, { ok: true })
+              } catch {
+                json(res, 400, { ok: false, error: 'bad_json' })
+              }
+            })
+            return
+          }
+          json(res, 405, { ok: false, error: 'method not allowed' })
+          return
+        }
+
+        if (url === '/api/audio/sources' && req.method === 'GET') {
+          json(res, 200, {
+            ok: true,
+            current: audioState.source,
+            autoSelect: audioState.autoSelect,
+            preferred: audioState.preferred,
+            fallback: audioState.fallback,
+            sources: SOURCES.map((s) => ({
+              ...s,
+              available:
+                s.id === 0 || s.id === 7 || s.id === 1 || s.id === 5,
+              current: s.id === audioState.source,
+            })),
+          })
+          return
+        }
+
+        if (url === '/api/audio/source') {
+          let raw = ''
+          req.on('data', (c) => (raw += c))
+          req.on('end', () => {
+            try {
+              const body = JSON.parse(raw) as Record<string, unknown>
+              if (body.source !== undefined) {
+                const v = Number(body.source)
+                if (!Number.isInteger(v) || v < 0 || v > 7) {
+                  json(res, 400, { ok: false, error: 'bad_value' })
+                  return
+                }
+                audioState.source = v
+              }
+              if (body.autoSelect !== undefined) audioState.autoSelect = Boolean(body.autoSelect)
+              if (body.preferredSource !== undefined) {
+                const v = Number(body.preferredSource)
+                if (!Number.isInteger(v) || v < 0 || v > 7) {
+                  json(res, 400, { ok: false, error: 'bad_value' })
+                  return
+                }
+                audioState.preferred = v
+              }
+              if (body.fallbackSource !== undefined) {
+                const v = Number(body.fallbackSource)
+                if (!Number.isInteger(v) || v < 0 || v > 7) {
+                  json(res, 400, { ok: false, error: 'bad_value' })
+                  return
+                }
+                audioState.fallback = v
+              }
+              json(res, 200, { ok: true, ...audioState })
+            } catch {
+              json(res, 400, { ok: false, error: 'bad_json' })
+            }
+          })
           return
         }
 

@@ -250,6 +250,16 @@ bool ConfigStore::load(Config& cfg) {
     }
   }
 
+  cfg.audioSource = clampInt(ao["source"] | cfg.audioSource, SOURCE_NONE,
+                             SOURCE_COUNT - 1);
+  cfg.autoSelectSource = ao["autoSelect"] | cfg.autoSelectSource;
+  cfg.preferredSource = clampInt(ao["preferredSource"] | cfg.preferredSource,
+                                 SOURCE_NONE, SOURCE_COUNT - 1);
+  cfg.fallbackSource = clampInt(ao["fallbackSource"] | cfg.fallbackSource,
+                                SOURCE_NONE, SOURCE_COUNT - 1);
+  cfg.themeTransitionMs = clampInt(doc["themeTransitionMs"] | cfg.themeTransitionMs,
+                                   0, 10000);
+
   cfg.micSck = doc["micSck"] | cfg.micSck;
   cfg.micWs = doc["micWs"] | cfg.micWs;
   cfg.micData = doc["micData"] | cfg.micData;
@@ -365,6 +375,12 @@ void buildDoc(const Config& cfg, JsonDocument& doc) {
     r.add(cfg.audio.groupRanges[g][0]);
     r.add(cfg.audio.groupRanges[g][1]);
   }
+  // audio source selection
+  ao["source"] = cfg.audioSource;
+  ao["autoSelect"] = cfg.autoSelectSource;
+  ao["preferredSource"] = cfg.preferredSource;
+  ao["fallbackSource"] = cfg.fallbackSource;
+  doc["themeTransitionMs"] = cfg.themeTransitionMs;
 
   JsonArray strips = doc["strips"].to<JsonArray>();
   for (int i = 0; i < cfg.stripCount; ++i) {

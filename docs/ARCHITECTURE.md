@@ -586,6 +586,23 @@ Arduino-ESP32 built-ins (Ph 4).
    path; our driver layer is the seam through which it is replaced.
 8. **Effects computed at 41 Hz, throttled to `targetFps`** — smooth motion with
    a budget ten times smaller than the frame window.
+9. **Universal capability detection, never hard-coded IDs** — every device is
+   a `DeviceProfile` row (kind/caps/status/classifier); detection *classifies*
+   but never drives outputs. Unknown devices stay `Detected` /
+   `needs_investigation`. AM-006 exists as a validation profile whose
+   `needsConditioning` flag forces "compatible / conditioning required".
+10. **Local-first device registry + discovery** — the `DeviceManager` persists
+    trusted rows (`/devices.json`) and runs a RESO_DISCOVER multicast
+    responder/scanner (`239.255.42.10:9770`); scans register peers without
+    clobbering existing trust.
+11. **Boot-time audio source selection with hysteresis** — `SourceSelector`
+    runs once at boot (pipeline is built once): preferred source wins if
+    available, else fallback, else the configured default. Live switching is
+    deferred to next boot rather than faked.
+12. **Theme cross-fades, still pure** — `ThemeBlend.h` (host-tested, no Arduino)
+    is driven by `ThemeEngine`; `themeTransitionMs` (default 500) fades instead
+    of snapping, `0` keeps the legacy instant switch. Uses the AUTO stage name
+    as cache key so auto stages take their label's blend.
 
 > **Electrical safety is a hard requirement, not software.** Power limiting
 > caps *visible* brightness/current in software; fuses, correct PSU sizing,
@@ -793,7 +810,9 @@ G:\LED project\
 │   ├── src\
 │   │   ├── main.cpp
 │   │   ├── util\               Rgb/HSL/palette helper, Smoother, Log
-│   │   ├── audio\              AudioSource|I2SMicSource|AudioAnalyzer|BeatDetector
+│   │   ├── audio\              AudioSource|I2SMicSource|AudioAnalyzer|BeatDetector|TestToneSource|SourceSelector|SourceKind
+│   │   ├── device\             DeviceTypes|DeviceProfile|DeviceRegistry|DeviceManager (discovery + /devices.json)
+│   │   ├── theme\              ThemeEngine + ThemeBlend (cross-fade)
 │   │   ├── led\                LEDDriver|addressable\ |analog\ |single\ |factory\
 │   │   ├── effects\            Effect|LedFrame|EffectParams|EffectRegistry|fx\…
 │   │   ├── config\             ConfigDefs|Config|ConfigStore|ConfigDefaults

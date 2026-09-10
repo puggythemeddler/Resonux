@@ -30,6 +30,54 @@ type Frame = {
   peaks?: number[]
 }
 
+type Device = {
+  id: string
+  name: string
+  profileId?: string
+  connection?: string
+  connectionLabel?: string
+  status?: string
+  statusLabel?: string
+  source?: number
+  persisted?: boolean
+  needsConditioning?: boolean
+  note?: string
+  lastSeen?: number
+  caps?: string[]
+}
+
+type DeviceProfileRow = {
+  id: string
+  name: string
+  manufacturer?: string
+  deviceType?: string
+  capabilities?: number
+  needsConditioning?: boolean
+}
+
+type DevicesData = {
+  ok: boolean
+  devices: Device[]
+  profiles: DeviceProfileRow[]
+}
+
+type AudioSourceRow = {
+  id: number
+  ident: string
+  label: string
+  available: boolean
+  current: boolean
+}
+
+type AudioSourcesData = {
+  ok: boolean
+  current: number
+  autoSelect: boolean
+  preferred: number
+  fallback: number
+  sources: AudioSourceRow[]
+}
+
 type AnyConfig = Record<string, unknown>
 
 type Theme = {
@@ -82,7 +130,7 @@ type StateT = {
   themeCount: number
 }
 
-type Tab = 'live' | 'themes' | 'config' | 'system' | 'ota'
+type Tab = 'live' | 'themes' | 'devices' | 'config' | 'system' | 'ota'
 
 const baseBrightness = (t: Theme) =>
   typeof t.brightness === 'object' ? t.brightness.base : t.brightness
@@ -270,6 +318,16 @@ export default function App() {
   const sysPhaseRef = useRef(sysPhase)
   sysPhaseRef.current = sysPhase
 
+  const [devicesData, setDevicesData] = useState<DevicesData | null>(null)
+  const [devicesErr, setDevicesErr] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [identSel, setIdentSel] = useState<Record<string, string>>({})
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editNote, setEditNote] = useState('')
+  const [audio, setAudio] = useState<AudioSourcesData | null>(null)
+  const [audioMsg, setAudioMsg] = useState('')
+
   const poll = useCallback(async () => {
     try {
       const [sr, fr, str] = await Promise.all([
@@ -443,6 +501,127 @@ export default function App() {
       setThemesErr((e as Error).message)
     }
   }
+
+  const loadDevices = useCallback(async () => {
+    try {
+      const r = await fetch('/api/devices')
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      setDevicesData((await r.json()) as DevicesData)
+      setDevicesErr('')
+    } catch (e) {
+      setDevicesErr((e as Error).message)
+    }
+  }, [])
+
+  const scanDevices = async () => {
+    setScanning(true)
+    setDevicesErr('')
+    try {
+      const r = await fetch('/api/devices/scan', { method: 'POST' })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setDevicesData((await r.json()) as DevicesData)
+    } catch (e) {
+      setDevicesErr((e as Error).message)
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const identifyDevice = async (id: string, profileId: string) => {
+    if (!profileId) return
+    try {
+      const r = await fetch('/api/device?id=' + encodeURIComponent(id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setDevicesErr('')
+      await loadDevices()
+    } catch (e) {
+      setDevicesErr((e as Error).message)
+    }
+  }
+
+  const saveDeviceEdit = async (id: string) => {
+    try {
+      const r = await fetch('/api/device?id=' + encodeURIComponent(id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName, note: editNote }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setEditingId(null)
+      setDevicesErr('')
+      await loadDevices()
+    } catch (e) {
+      setDevicesErr((e as Error).message)
+    }
+  }
+
+  const deleteDevice = (d: Device) =>
+    ask({
+      title: `Remove ${d.name}?`,
+      message: `"${d.id}" loses its trusted identity on this controller. It may reappear the next time a network scan detects it.`,
+      confirmLabel: 'Remove',
+      onConfirm: async () => {
+        try {
+          const r = await fetch('/api/device?id=' + encodeURIComponent(d.id), { method: 'DELETE' })
+          if (!r.ok) {
+            const j = await r.json().catch(() => null)
+            throw new Error((j && j.error) || 'HTTP ' + r.status)
+          }
+          setDevicesErr('')
+          await loadDevices()
+        } catch (e) {
+          setDevicesErr((e as Error).message)
+        }
+      },
+    })
+
+  const loadAudio = useCallback(async () => {
+    try {
+      const r = await fetch('/api/audio/sources')
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      setAudio((await r.json()) as AudioSourcesData)
+      setAudioMsg('')
+    } catch (e) {
+      setAudioMsg((e as Error).message)
+    }
+  }, [])
+
+  const saveAudio = async (body: Record<string, unknown>) => {
+    try {
+      const r = await fetch('/api/audio/source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setAudio((await r.json()) as AudioSourcesData)
+      setAudioMsg('saved — applied on next boot')
+    } catch (e) {
+      setAudioMsg((e as Error).message)
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== 'devices') return
+    loadDevices()
+    loadAudio()
+  }, [tab, loadDevices, loadAudio])
 
   const openTheme = (t: Theme) => {
     const r = t.response ?? DEFAULT_RESP
@@ -625,9 +804,9 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        {(['live', 'themes', 'config', 'system', 'ota'] as Tab[]).map((t) => (
+        {(['live', 'themes', 'devices', 'config', 'system', 'ota'] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'config' ? 'Configuration' : t === 'system' ? 'System' : 'Firmware Update'}
+            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'devices' ? 'Devices & Sources' : t === 'config' ? 'Configuration' : t === 'system' ? 'System' : 'Firmware Update'}
           </button>
         ))}
       </nav>
@@ -771,6 +950,172 @@ export default function App() {
           {(sysPhase === 'restarting' || sysPhase === 'reconnecting') && (
             <button onClick={() => setSysPhase('idle')}>Dismiss</button>
           )}
+        </div>
+      )}
+
+      {tab === 'devices' && (
+        <div className="grid">
+          <div className="card" style={{ gridColumn: '1 / -1' }}>
+            <div className="row">
+              <h3 style={{ margin: 0 }}>Detected &amp; configured devices</h3>
+              <div className="actions" style={{ margin: 0 }}>
+                <button onClick={() => { loadDevices(); loadAudio() }}>Reload</button>
+                <button className="primary" onClick={scanDevices} disabled={scanning}>
+                  {scanning ? 'Scanning…' : 'Scan network'}
+                </button>
+              </div>
+            </div>
+            <p className="muted">
+              Discovery is passive and never drives outputs. Scan probes the RESO_DISCOVER multicast group;
+              local hardware (this controller, microphone, LED strip) is always listed. Everything starts
+              at <em>Detected</em> — bind an identity before any integration is allowed.
+            </p>
+            {devicesErr && <div className="err">{devicesErr}</div>}
+            {!devicesData && !devicesErr && <p className="muted">Loading…</p>}
+            {devicesData && devicesData.devices.length === 0 && !devicesErr && (
+              <p className="muted">No devices yet — run a scan.</p>
+            )}
+            {devicesData && devicesData.devices.length > 0 && (
+              <div className="device-list">
+                {devicesData.devices.map((d) => {
+                  const local = d.id.startsWith('local:') || d.id.startsWith('resonux:')
+                  const cond = d.needsConditioning
+                  return (
+                    <div key={d.id} className="device-row">
+                      <div className="device-main">
+                        <strong>{d.name}</strong>
+                        <span className="device-id">{d.id}</span>
+                        <div className="caps-cell">
+                          {(d.caps ?? []).map((c) => (
+                            <span key={c} className="chip">{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="device-meta">
+                        <span className={`badge dev-${d.status ?? 'detected'}`}>{d.statusLabel ?? d.status ?? 'Detected'}</span>
+                        <span className="badge">{d.connectionLabel ?? d.connection}</span>
+                        {cond && <span className="badge cond">conditioning required</span>}
+                        {d.persisted && <span className="badge">trusted</span>}
+                        {!local && <span className="badge">transient</span>}
+                      </div>
+                      <div className="device-actions">
+                        {cond && (
+                          <span className="warn-hint" title="This device profile carries an electrical risk (e.g. speaker-level output). Do not wire it to a mic/line input without attenuation.">⚠ verify levels</span>
+                        )}
+                        {d.profileId ? (
+                          <span className="badge prof">{d.profileId}</span>
+                        ) : (
+                          <select
+                            value={identSel[d.id] ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setIdentSel((s) => ({ ...s, [d.id]: v }))
+                              identifyDevice(d.id, v)
+                            }}
+                            disabled={!devicesData}
+                          >
+                            <option value="">Identify as…</option>
+                            {devicesData?.profiles.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}{p.needsConditioning ? ' ⚠' : ''}</option>
+                            ))}
+                          </select>
+                        )}
+                        {local ? (
+                          <span className="badge">builtin</span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingId(d.id)
+                                setEditName(d.name)
+                                setEditNote(d.note ?? '')
+                              }}
+                            >
+                              Configure
+                            </button>
+                            <button className="danger" onClick={() => deleteDevice(d)}>Remove</button>
+                          </>
+                        )}
+                      </div>
+                      {editingId === d.id && (
+                        <div className="device-edit">
+                          <div className="row">
+                            <label>Name</label>
+                            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                          </div>
+                          <div className="row">
+                            <label>Note</label>
+                            <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} />
+                          </div>
+                          <div className="actions">
+                            <button className="primary" onClick={() => saveDeviceEdit(d.id)}>Save</button>
+                            <button onClick={() => setEditingId(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>Active audio source</h3>
+            {!audio && !audioMsg && <p className="muted">Loading…</p>}
+            {audioMsg && <div className={audioMsg.startsWith('saved') ? 'ok' : 'err'}>{audioMsg}</div>}
+            {audio && (
+              <>
+                <div className="row">
+                  <label>Input source</label>
+                  <select
+                    value={audio.current}
+                    onChange={(e) => saveAudio({ source: Number(e.target.value) })}
+                  >
+                    {audio.sources.map((s) => (
+                      <option key={s.id} value={s.id} disabled={!s.available}>{s.label} {s.available ? '' : '(reserved)'}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="row">
+                  <label>Backup if signal lost</label>
+                  <select
+                    value={audio.fallback}
+                    onChange={(e) => saveAudio({ fallbackSource: Number(e.target.value) })}
+                  >
+                    {audio.sources.map((s) => (
+                      <option key={s.id} value={s.id} disabled={!s.available}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="row">
+                  <label>Auto-select back to preferred</label>
+                  <input
+                    type="checkbox"
+                    checked={audio.autoSelect}
+                    onChange={(e) => saveAudio({ autoSelect: e.target.checked })}
+                  />
+                </div>
+                <div className="row">
+                  <label>Preferred source</label>
+                  <select
+                    value={audio.preferred}
+                    onChange={(e) => saveAudio({ preferredSource: Number(e.target.value) })}
+                  >
+                    {audio.sources.map((s) => (
+                      <option key={s.id} value={s.id} disabled={!s.available}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="muted">
+                  With auto-select on, the controller prefers the preferred source and waits 1.5&nbsp;s of
+                  hysteresis before committing to the fallback, then returns when the preferred signal is back.
+                  Source routing is applied at boot; network/device sources become selectable once a device is
+                  trusted with a matching audio capability.
+                </p>
+              </>
+            )}
+          </div>
         </div>
       )}
 

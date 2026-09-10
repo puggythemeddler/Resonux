@@ -1,6 +1,9 @@
 #include "web/WebUi.h"
 #include "audio/AudioFrame.h"
+#include "audio/SourceKind.h"
 #include "config/ConfigStore.h"
+#include "device/DeviceManager.h"
+#include "device/DeviceProfile.h"
 #include "network/WifiManager.h"
 #include "runtime/App.h"
 #include "sync/SyncNode.h"
@@ -41,6 +44,13 @@ bool WebUi::begin(App& app) {
   _server.on("/api/themes", HTTP_DELETE, [this]() { handleThemesDelete(); });
   _server.on("/api/themes/select", HTTP_POST, [this]() { handleThemesSelect(); });
   _server.on("/api/themes/reset", HTTP_POST, [this]() { handleThemesReset(); });
+  _server.on("/api/devices", HTTP_GET, [this]() { sendDevices(); });
+  _server.on("/api/devices/scan", HTTP_POST, [this]() { handleDevicesScan(); });
+  _server.on("/api/device", HTTP_GET, [this]() { handleDevice(); });
+  _server.on("/api/device", HTTP_POST, [this]() { handleDevice(); });
+  _server.on("/api/device", HTTP_DELETE, [this]() { handleDevice(); });
+  _server.on("/api/audio/sources", HTTP_GET, [this]() { sendAudioSources(); });
+  _server.on("/api/audio/source", HTTP_POST, [this]() { handleAudioSource(); });
   _server.on(
       "/api/ota", HTTP_POST,
       [this]() {
@@ -466,4 +476,191 @@ void WebUi::handleThemesSelect() {
 void WebUi::handleThemesReset() {
   ThemeEngine::instance().resetDefaults();
   _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::sendDevices() {
+  JsonDocument doc;
+  doc["ok"] = true;
+  _app->devices().jsonList(doc);
+  JsonArray pf = doc["profiles"].to<JsonArray>();
+  for (int i = 0; i < dev::builtinProfileCount(); ++i) {
+    const dev::BuiltinProfileEntry* p = dev::builtinProfileAt(i);
+    if (!p) continue;
+    JsonObject o = pf.add<JsonObject>();
+    o["id"] = p->id;
+    o["name"] = p->model;
+    o["manufacturer"] = p->manufacturer;
+    o["deviceType"] = p->deviceType;
+    o["capabilities"] = p->capabilities;
+    o["needsConditioning"] = p->needsConditioning;
+  }
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleDevicesScan() {
+  int found = _app->devices().scan(millis());
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["found"] = found;
+  doc["registered"] = _app->devices().count();
+  _app->devices().jsonList(doc);
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleDevice() {
+  const String id = _server.arg("id");
+  DeviceManager& dm = _app->devices();
+  JsonDocument doc;
+
+  if (_server.method() == HTTP_GET) {
+    const dev::DeviceInfo* d = dm.registry().find(id.c_str());
+    if (!d) {
+      doc["ok"] = false;
+      doc["error"] = "not_found";
+      String out;
+      serializeJson(doc, out);
+      _server.send(404, "application/json", out);
+      return;
+    }
+    // Reuse the list serializer, then pull this one row back out so the JSON
+    // shape is identical for details and the list.
+    dm.jsonList(doc);
+    doc["ok"] = true;
+    String out;
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
+    return;
+  }
+
+  if (_server.method() == HTTP_DELETE) {
+    const String guarded = id;
+    if (guarded.startsWith("local:") || guarded.startsWith("resonux:")) {
+      doc["ok"] = false;
+      doc["error"] = "builtin_row";
+      String out;
+      serializeJson(doc, out);
+      _server.send(400, "application/json", out);
+      return;
+    }
+    bool removed = dm.remove(id.c_str());
+    doc["ok"] = removed;
+    doc["deleted"] = removed;
+    if (!removed) doc["error"] = "not_found";
+    String out;
+    serializeJson(doc, out);
+    _server.send(removed ? 200 : 404, "application/json", out);
+    return;
+  }
+
+  if (_server.method() == HTTP_POST) {
+    JsonDocument body;
+    if (deserializeJson(body, _server.arg("plain")) != DeserializationError::Ok) {
+      doc["ok"] = false;
+      doc["error"] = "bad_json";
+      String out;
+      serializeJson(doc, out);
+      _server.send(400, "application/json", out);
+      return;
+    }
+    const char* profileId =
+        body["profileId"].is<const char*>() ? body["profileId"].as<const char*>()
+                                            : nullptr;
+    const char* name =
+        body["name"].is<const char*>() ? body["name"].as<const char*>() : nullptr;
+    const char* note =
+        body["note"].is<const char*>() ? body["note"].as<const char*>() : nullptr;
+    bool ok = true;
+    if (profileId && profileId[0]) ok = ok && dm.identify(id.c_str(), profileId);
+    if (name || note) ok = ok && dm.configure(id.c_str(), name, note);
+    if (!ok) {
+      doc["ok"] = false;
+      doc["error"] = "bad_request";
+      String out;
+      serializeJson(doc, out);
+      _server.send(400, "application/json", out);
+      return;
+    }
+    doc["ok"] = true;
+    String out;
+    serializeJson(doc, out);
+    _server.send(200, "application/json", out);
+    return;
+  }
+
+  _server.send(405, "application/json", "{\"ok\":false,\"error\":\"method\"}");
+}
+
+void WebUi::sendAudioSources() {
+  const Config& cfg = _app->config();
+  const bool slave = cfg.sync.enabled && cfg.sync.role == SYNC_SLAVE;
+
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["current"] = cfg.audioSource;
+  doc["autoSelect"] = cfg.autoSelectSource;
+  doc["preferred"] = cfg.preferredSource;
+  doc["fallback"] = cfg.fallbackSource;
+
+  JsonArray opts = doc["sources"].to<JsonArray>();
+  for (int k = SOURCE_NONE; k < SOURCE_COUNT; ++k) {
+    bool available;
+    switch (k) {
+      case SOURCE_NONE:
+      case SOURCE_TEST:
+        available = true;
+        break;
+      case SOURCE_MIC:
+        available = !slave;
+        break;
+      default:
+        available = false;  // reserved until a device binding exists
+        break;
+    }
+    JsonObject o = opts.add<JsonObject>();
+    o["id"] = k;
+    o["ident"] = sourceKindIdent((SourceKind)k);
+    o["label"] = sourceKindLabel((SourceKind)k);
+    o["available"] = available;
+    o["current"] = (k == cfg.audioSource);
+  }
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleAudioSource() {
+  JsonDocument doc;
+  JsonDocument body;
+  if (deserializeJson(body, _server.arg("plain")) != DeserializationError::Ok) {
+    doc["ok"] = false;
+    doc["error"] = "bad_json";
+    String out;
+    serializeJson(doc, out);
+    _server.send(400, "application/json", out);
+    return;
+  }
+  bool ok = true;
+  if (body["source"].is<int>()) ok = ok && _app->setAudioSource(body["source"]);
+  if (body["autoSelect"].is<bool>()) ok = ok && _app->setAutoSelect(body["autoSelect"]);
+  if (body["preferredSource"].is<int>()) ok = ok && _app->setPreferredSource(body["preferredSource"]);
+  if (!ok) {
+    doc["ok"] = false;
+    doc["error"] = "bad_value";
+    String out;
+    serializeJson(doc, out);
+    _server.send(400, "application/json", out);
+    return;
+  }
+  doc["ok"] = true;
+  doc["source"] = _app->audioSource();
+  doc["autoSelect"] = _app->config().autoSelectSource;
+  doc["preferred"] = _app->preferredSource();
+  doc["fallback"] = _app->config().fallbackSource;
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
 }

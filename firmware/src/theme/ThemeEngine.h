@@ -67,6 +67,8 @@ private:
   void setActiveRaw(int slot, const char* id);  // copies into cache
   bool saveAllLocked();
   ThemeFrame processAuto(const AudioFrame& a, uint32_t nowMs);
+  // Smooths theme/stage switches over _transDurMs using ThemeBlend.
+  ThemeFrame transition(int slot, ThemeFrame target, uint32_t nowMs);
 
   Config*    _cfgPtr = nullptr;
   ThemeDef   _themes[kMaxThemes];
@@ -85,6 +87,13 @@ private:
   uint32_t   _autoLastMs = 0;
   uint32_t   _autoAfroMs = 0;
   uint32_t   _autoRockMs = 0;
+
+  // Theme-transition state (cross-fade when the active theme/stage changes)
+  ThemeFrame _prevFrame[kMaxStrips + 1];       // last emitted frame
+  uint32_t   _transStart[kMaxStrips + 1];      // transition begin timestamp
+  char       _trackTheme[kMaxStrips + 1][Themes::kMaxIdLen];  // transition key
+  bool       _trackInited[kMaxStrips + 1] = {};
+  uint32_t   _transDurMs = 0;                  // configured transition length
 };
 
 inline Themes::ThemeFrame ThemeEngine::identityFrame() {

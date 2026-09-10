@@ -1,5 +1,6 @@
 #pragma once
 #include "audio/AudioAnalyzer.h"
+#include "audio/SourceKind.h"
 #include "config/ConfigDefs.h"
 #include "display/DisplayTypes.h"
 #include "effects/Effect.h"
@@ -100,6 +101,16 @@ struct Config {
   int                micWs = 5;
   int                micData = 6;
   AudioAnalyzerConfig audio;
+  // Audio source selection (see audio/SourceKind.h). The current source is
+  // applied at boot; autoSelectSource lets the SourceSelector fall back to
+  // fallbackSource when preferredSource is unavailable and back when it
+  // returns — always with hysteresis, never silently.
+  int                audioSource = SOURCE_MIC;
+  bool               autoSelectSource = false;
+  int                preferredSource = SOURCE_MIC;
+  int                fallbackSource = SOURCE_NONE;
+  // Cross-fade length (ms) when the active theme/stage changes. 0 = instant.
+  uint16_t           themeTransitionMs = 500;
   int                stripCount = 1;
   StripConfig        strips[kMaxStrips];
   uint8_t            masterBrightness = 255;

@@ -156,6 +156,36 @@ the configured timeout, then recovers when it returns.
 reboots; wake works per `wakePin` config; both UIs share the same
 `SystemMode` source of truth.
 
+## 13. Universal device detection + audio source selection
+
+The controller now exposes a capability-based device registry (`DeviceManager`,
+`src/device/`), a RESO_DISCOVER multicast responder/scanner, persisted trusted
+rows (`/devices.json`), and an audio-source selector.
+
+1. **Boot rows:** serial shows `[device] manager: N rows, responder=1`. The web
+   Devices & Sources tab lists `resonux:self`, `local:mic`, `local:led`
+   (configured builtins) with capability chips.
+2. **Active source:** with default config the mic is the input; `SOURCE_TEST`
+   selects the built-in test tone and `SOURCE_NONE` idles. Change source via
+   the web selector (`POST /api/audio/source`) and confirm the analyser feeds
+   the LEDs after the next boot. With `autoSelectSource` on, hysteresis
+   (1.5 s hold / 2.5 s dwell) picks preferred-vs-fallback at boot.
+3. **Scan:** `POST /api/devices/scan` (web Scan button) probes the multicast
+   group; a second S3 flashed with this firmware answers
+   `RESO-DISCOVER-RESP` and appears as *detected*. Detection never drives
+   outputs.
+4. **Identify / configure / remove:** bind a scanned row with a builtin
+   profile — the AM-006 validation profile must show "compatible /
+   conditioning required ⚠" and *never* `safe_to_connect` — then Remove deletes
+   the persisted row. All mutations persist across reboots.
+5. **Theme cross-fades:** set `themeTransitionMs` (default 500); switching
+   themes (or an AUTO stage change) must cross-fade over that window instead of
+   snapping. `0` restores the legacy instant switch.
+
+**Pass:** the second S3 is discovered without touching `config.json`; a test
+tone drives the bar graph with no mic attached; un-known devices stay
+`Detected`/`needs_investigation`; theme switches fade smoothly.
+
 ## Safety / power notes
 
 - Common ground between PSU, strips and S3; never run strip current through the

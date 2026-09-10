@@ -6,13 +6,21 @@ meaningful automated tests cheap.
 
 ## 1. Host unit tests (x86, CI-friendly)
 
-**Implemented**: `pio test -e native` runs 43 Unity assertions across 3 host
+**Implemented**: `pio test -e native` runs 69 Unity assertions across 4 host
 suites — `test_logic` (colour math, smoothing, effects), `test_sync`
-(multicast clock/packet), `test_system` (restart/power-off state machine) —
-against the pure layers: `util/Rgb.h` (HSL→RGB, palettes, blend/scale/
+(multicast clock/packet), `test_system` (restart/power-off state machine),
+`test_device` (universal detection: capability model, device registry,
+profile validation incl. the AM-006 conditioning profile, deterministic
+`classify()`, hysteresis-aware `SourceSelector` fallback/preferred logic,
+`TestToneSource`, and theme cross-fade blending) —
+against the pure layers: `util/Rgb.h` (HSL↔RGB, palettes, blend/scale/
 luma/clamps), `util/Smoother.h`, `effects/EffectUtil.h`, `effects/LedFrame.h`,
-`audio/AudioFrame.h`, and real effects (`BassPulseEffect`, `GradientEffect`),
-plus `firmware/src/system/SystemMode.h`.
+`audio/AudioFrame.h`, real effects (`BassPulseEffect`, `GradientEffect`),
+`firmware/src/system/SystemMode.h`, `firmware/src/device/*` and
+`firmware/src/audio/SourceSelector.h`.
+Note: `pio test -e native` compiles test sources only, which is why the new
+device/source/blend logic lives in Arduino-free headers (the registry, profile
+table and selector run unchanged on host and device).
 
 Planned extensions: `BeatDetector`, every remaining `Effect` (render into an
 in-memory `LedFrame`, sample a few pixels), and DSP band aggregation. `LedFrame`

@@ -38,6 +38,11 @@ private:
   void handleThemesDelete();
   void handleThemesSelect();
   void handleThemesReset();
+  void sendDevices();                 // GET /api/devices
+  void handleDevicesScan();           // POST /api/devices/scan
+  void handleDevice();                // GET|POST|DELETE /api/device?id=
+  void sendAudioSources();            // GET /api/audio/sources
+  void handleAudioSource();           // POST /api/audio/source
   String mimeFor(const String& path);
 
   App* _app = nullptr;

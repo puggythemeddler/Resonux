@@ -1,5 +1,6 @@
 #include "theme/ThemeEngine.h"
 #include "config/ConfigStore.h"
+#include "theme/ThemeBlend.h"
 #include "util/Rgb.h"
 #include <LittleFS.h>
 #include <math.h>
@@ -118,6 +119,7 @@ void ThemeEngine::begin(Config& cfg) {
   _cfgPtr = &cfg;
   _mutex = xSemaphoreCreateMutex();
   _count = 0;
+  _transDurMs = cfg.themeTransitionMs;
 
   if (!loadAll()) installDefaults();
 
@@ -823,6 +825,51 @@ ThemeFrame ThemeEngine::processAuto(const AudioFrame& a, uint32_t nowMs) {
   return f;
 }
 
+ThemeFrame ThemeEngine::transition(int slot, ThemeFrame target, uint32_t nowMs) {
+  // Transition key: for AUTO use the evolving stage name so stage changes
+  // cross-fade too; for normal themes use the theme id.
+  const char* key = (target.themeId &&
+                     strncmp(target.themeId, Themes::kAutoThemeId,
+                             sizeof(Themes::kAutoThemeId)) == 0)
+                        ? (target.themeName ? target.themeName : "auto")
+                        : (target.themeId ? target.themeId : "");
+
+  if (!_trackInited[slot]) {
+    // Very first frame: no fade-in, just adopt the target so boot isn't dim.
+    _trackInited[slot] = true;
+    _prevFrame[slot] = target;
+    strncpy(_trackTheme[slot], key, sizeof(_trackTheme[slot]) - 1);
+    _trackTheme[slot][sizeof(_trackTheme[slot]) - 1] = '\0';
+    _transStart[slot] = nowMs;
+    return target;
+  }
+
+  if (_transDurMs == 0) {
+    // Transition disabled: behave exactly like the legacy instant switch.
+    _prevFrame[slot] = target;
+    return target;
+  }
+
+  if (strcmp(_trackTheme[slot], key) != 0) {
+    // Theme/stage changed: begin a cross-fade from the previous output frame.
+    strncpy(_trackTheme[slot], key, sizeof(_trackTheme[slot]) - 1);
+    _trackTheme[slot][sizeof(_trackTheme[slot]) - 1] = '\0';
+    _transStart[slot] = nowMs;
+    return _prevFrame[slot];
+  }
+
+  uint32_t dt = nowMs - _transStart[slot];
+  if (dt >= _transDurMs) {
+    _prevFrame[slot] = target;
+    return target;
+  }
+  uint32_t safeDt = (dt == 0) ? 1u : dt;  // avoid parking on the start frame
+  // Blend from the previous output frame toward the *latest* target so the
+  // light chases live audio; the snap at dt>=dur resets the ramp cleanly.
+  return Themes::blendThemeFrame(_prevFrame[slot], target,
+                                 (float)safeDt / (float)_transDurMs);
+}
+
 ThemeFrame ThemeEngine::process(const AudioFrame& a, uint32_t nowMs) {
   if (!_mutex) return identityFrame();
   bool autoMode = false;
@@ -840,8 +887,13 @@ ThemeFrame ThemeEngine::process(const AudioFrame& a, uint32_t nowMs) {
     }
     xSemaphoreGive(_mutex);
   }
-  if (autoMode) return processAuto(a, nowMs);
-  return have ? processTheme(_work[kMaxStrips], a, nowMs) : identityFrame();
+  ThemeFrame raw;
+  if (autoMode) {
+    raw = processAuto(a, nowMs);
+  } else {
+    raw = have ? processTheme(_work[kMaxStrips], a, nowMs) : identityFrame();
+  }
+  return transition(kMaxStrips, raw, nowMs);
 }
 
 ThemeFrame ThemeEngine::processStrip(int strip, const AudioFrame& a,
@@ -862,6 +914,11 @@ ThemeFrame ThemeEngine::processStrip(int strip, const AudioFrame& a,
     }
     xSemaphoreGive(_mutex);
   }
-  if (autoMode) return processAuto(a, nowMs);
-  return have ? processTheme(_work[strip], a, nowMs) : identityFrame();
+  ThemeFrame raw;
+  if (autoMode) {
+    raw = processAuto(a, nowMs);
+  } else {
+    raw = have ? processTheme(_work[strip], a, nowMs) : identityFrame();
+  }
+  return transition(strip, raw, nowMs);
 }
