@@ -1,4 +1,5 @@
 #include "device/DeviceManager.h"
+#include "device/DeviceInsight.h"
 #include "device/DeviceProfile.h"
 #include "util/Log.h"
 #include <Arduino.h>
@@ -10,15 +11,6 @@ using namespace dev;
 
 namespace {
 int clampTo(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
-dev::ConnectionType connectionFromIdent(const char* id) {
-  for (int i = 0; i < dev::kConnectionCount; ++i) {
-    if (strcmp(dev::connectionAt(i).id, id) == 0) {
-      return dev::connectionAt(i).kind;
-    }
-  }
-  return CONN_UNKNOWN;
-}
 }  // namespace
 
 DeviceManager::DeviceManager() = default;
@@ -111,6 +103,12 @@ void DeviceManager::begin(const Config& cfg) {
   _storeOk = _store.begin();
   _registry.clearTransient();
   if (_storeOk) _store.load(_registry);
+  if (cfg.sync.enabled) {
+    strncpy(_selfRole, cfg.sync.role == SYNC_SLAVE ? "slave" : "master",
+            sizeof(_selfRole) - 1);
+  } else {
+    strncpy(_selfRole, "standalone", sizeof(_selfRole) - 1);
+  }
   projectLocal(cfg);
   if (_storeOk) _store.save(_registry);
 
@@ -130,6 +128,8 @@ void DeviceManager::projectLocal(const Config& cfg) {
   DeviceInfo self;
   strncpy(self.id, "resonux:self", sizeof(self.id) - 1);
   strncpy(self.name, cfg.deviceName, sizeof(self.name) - 1);
+  strncpy(self.fw, kFirmwareVersion, sizeof(self.fw) - 1);
+  strncpy(self.role, _selfRole, sizeof(self.role) - 1);
   const dev::DeviceProfile sp = dev::profileById("resonux");
   if (sp.id[0]) {
     strncpy(self.profileId, sp.id, sizeof(self.profileId) - 1);
@@ -225,53 +225,32 @@ bool DeviceManager::processInbound(uint32_t nowMs) {
     if (remote == WiFi.localIP()) return false;
     // Answer the probe with a compact identity line back to the sender.
     if (_udp.beginPacket(remote, rport) == 1) {
-      _udp.print(kDiscoverResp);
-      _udp.print("id=resonux:self name=resonux kind=network ");
-      _udp.print("caps=");
-      _udp.print((unsigned long)(dev::CAP_NETWORK | dev::CAP_AUDIO_INPUT));
-      _udp.print(" source=");
-      _udp.print((int)SRC_NETWORK);
+      char line[256];
+      dev::buildDiscoverResponse(
+          line, sizeof(line), "resonux:self", WiFi.getHostname(),
+          dev::connectionIdent(CONN_NETWORK),
+          (uint32_t)(dev::CAP_NETWORK | dev::CAP_AUDIO_INPUT |
+                     dev::CAP_ARTNET | dev::CAP_LED_OUTPUT),
+          SRC_NETWORK, kFirmwareVersion, _selfRole);
+      _udp.print(line);
       _udp.endPacket();
     }
     return false;
   }
 
-  if (strncmp((char*)_rxBuf, kDiscoverResp, 15) == 0) {
-    char id[24] = "", name[24] = "", kind[16] = "";
-    uint32_t caps = 0;
-    int src = (int)SRC_UNKNOWN;
-    const char* p = (const char*)_rxBuf + 15;
-    while (p && *p) {
-      while (*p == ' ') ++p;
-      const char* nl = strchr(p, ' ');
-      size_t tl = nl ? (size_t)(nl - p) : strlen(p);
-      const char* eq = strchr(p, '=');
-      if (!eq) break;
-      size_t kl = (size_t)(eq - p);
-      if (tl <= 32) {
-        if (kl == 2 && strncmp(p, "id=", 3) == 0) {
-          strncpy(id, eq + 1, sizeof(id) - 1);
-        } else if (kl == 4 && strncmp(p, "name=", 5) == 0) {
-          strncpy(name, eq + 1, sizeof(name) - 1);
-        } else if (kl == 4 && strncmp(p, "kind=", 5) == 0) {
-          strncpy(kind, eq + 1, sizeof(kind) - 1);
-        } else if (kl == 4 && strncmp(p, "caps=", 5) == 0) {
-          caps = (uint32_t)strtoul(eq + 1, nullptr, 10);
-        } else if (kl == 6 && strncmp(p, "source=", 7) == 0) {
-          src = clampTo(atoi(eq + 1), 0, SRC_COUNT - 1);
-        }
-      }
-      p = nl;
-    }
-    if (!id[0]) return false;
+  if (strncmp((char*)_rxBuf, kDiscoverRespPrefix, 15) == 0) {
+    const dev::DiscoverEnvelope e =
+        dev::parseDiscoverResponse((const char*)_rxBuf, n);
+    if (!e.valid) return false;
     DeviceInfo d;
-    strncpy(d.id, id, sizeof(d.id) - 1);
-    strncpy(d.name, name[0] ? name : id, sizeof(d.name) - 1);
-    dev::ConnectionType conn = connectionFromIdent(kind);
-    d.connection = conn == CONN_UNKNOWN ? CONN_NETWORK : conn;
-    d.capabilities = caps;
+    strncpy(d.id, e.id, sizeof(d.id) - 1);
+    strncpy(d.name, e.name[0] ? e.name : e.id, sizeof(d.name) - 1);
+    strncpy(d.fw, e.fw, sizeof(d.fw) - 1);
+    strncpy(d.role, e.role, sizeof(d.role) - 1);
+    d.connection = e.conn;
+    d.capabilities = e.caps;
     d.status = STATUS_DETECTED;
-    d.source = (DiscoverySource)(src >= 0 ? src : SRC_NETWORK);
+    d.source = e.source;
     d.persisted = false;  // discovery is transient until an explicit identity
     d.lastSeenMs = nowMs;
     int idx = _registry.upsert(d);
@@ -335,6 +314,28 @@ bool DeviceManager::remove(const char* id) {
   return _storeOk ? _store.save(_registry) : true;
 }
 
+bool DeviceManager::declare(const char* id, const char* name,
+                            dev::ConnectionType conn, uint32_t caps,
+                            bool wantsConditioning, const char* note) {
+  if (!id || !id[0] || caps == dev::CAP_NONE) return false;
+  if (strncmp(id, "local:", 6) == 0 || strncmp(id, "resonux:", 8) == 0) {
+    return false;
+  }
+  DeviceInfo* d = find(id);
+  if (!d) return false;
+  if (name && name[0]) strncpy(d->name, name, sizeof(d->name) - 1);
+  if (note && note[0]) strncpy(d->note, note, sizeof(d->note) - 1);
+  memset(d->profileId, 0, sizeof(d->profileId));  // manual; no builtin profile
+  d->connection = conn;
+  d->capabilities = caps;
+  d->needsConditioning = wantsConditioning;
+  d->status = dev::manualDeclareStatus(wantsConditioning);
+  d->source = SRC_MANUAL;
+  d->persisted = true;  // user-confirmed identity is trusted
+  d->lastSeenMs = millis();
+  return _storeOk ? _store.save(_registry) : true;
+}
+
 void DeviceManager::jsonList(JsonDocument& doc) const {
   JsonArray out = doc["devices"].to<JsonArray>();
   for (int i = 0; i < _registry.count(); ++i) {
@@ -354,11 +355,42 @@ void DeviceManager::jsonList(JsonDocument& doc) const {
     o["needsConditioning"] = d->needsConditioning;
     o["note"] = d->note;
     o["lastSeen"] = d->lastSeenMs;
+    if (d->fw[0]) o["fw"] = d->fw;
+    if (d->role[0]) o["role"] = d->role;
     JsonArray caps = o["caps"].to<JsonArray>();
     for (int c = 0; c < dev::kCapabilityCount; ++c) {
       if (hasCapability(*d, (dev::Capability)(1u << c))) {
         caps.add(dev::capabilityAt(c).id);
       }
+    }
+    // Profile-derived detail (protocols + safety notes) when bound.
+    if (d->profileId[0]) {
+      const dev::DeviceProfile p = dev::profileById(d->profileId);
+      if (p.id[0]) {
+        JsonArray proto = o["protocols"].to<JsonArray>();
+        for (int k = 0; k < p.protocolCount && k < kMaxConnections; ++k)
+          proto.add(p.protocols[k]);
+        JsonArray safety = o["safetyNotes"].to<JsonArray>();
+        for (int k = 0; k < p.safetyNoteCount && k < kMaxSafetyNotes; ++k)
+          safety.add(p.safetyNotes[k]);
+      }
+    }
+    // Honest tri-layer confidence + candidate integrations (§13/§14).
+    const dev::Confidence cf = dev::deviceConfidence(*d);
+    JsonObject conf = o["confidence"].to<JsonObject>();
+    conf["identity"] = cf.identity;
+    conf["capability"] = cf.capability;
+    conf["integration"] = cf.integration;
+    JsonArray integs = o["integrations"].to<JsonArray>();
+    dev::IntegrationRec recs[6];
+    const int nInt = dev::recommendIntegrations(*d, recs, 6);
+    for (int r = 0; r < nInt; ++r) {
+      if (!recs[r].recommended) continue;
+      JsonObject ir = integs.add<JsonObject>();
+      ir["kind"] = recs[r].kind;
+      ir["title"] = recs[r].title;
+      ir["route"] = recs[r].route;
+      ir["safe"] = recs[r].safe;
     }
   }
 }

@@ -302,24 +302,73 @@ export default function mockDevPlugin(): Plugin {
   ]
 
   const PROFILES = [
-    { id: 'resonux', name: 'Universal Controller', manufacturer: 'Resonux', deviceType: 'lighting-controller', needsConditioning: false },
-    { id: 'am006', name: 'AM-006', manufacturer: '(validation unit)', deviceType: 'multimedia-speaker', needsConditioning: true },
-    { id: 'inmp441_mic', name: 'Omnidirectional I2S Microphone', manufacturer: 'INMP441', deviceType: 'microphone', needsConditioning: false },
-    { id: 'led_onboard', name: 'LED Output', manufacturer: '(integrated)', deviceType: 'led-driver', needsConditioning: false },
-    { id: 'usb_audio', name: 'USB Audio Interface', manufacturer: 'Generic', deviceType: 'audio-interface', needsConditioning: false },
-    { id: 'bluetooth_speaker', name: 'Bluetooth Speaker', manufacturer: 'Generic', deviceType: 'speaker', needsConditioning: false },
-    { id: 'network_audio', name: 'Network Streamer', manufacturer: 'Generic', deviceType: 'network-audio', needsConditioning: false },
-    { id: 'touch_display', name: 'Touch Display', manufacturer: '(integrated)', deviceType: 'display', needsConditioning: false },
-    { id: 'dmx_fixture', name: 'DMX Fixture', manufacturer: 'Generic', deviceType: 'lighting-fixture', needsConditioning: false },
+    { id: 'resonux', name: 'Universal Controller', manufacturer: 'Resonux', deviceType: 'lighting-controller', capabilities: 0x10000 | 0x800 | 0x80 | 0x100 | 0x200 | 0x4 | 0x1, needsConditioning: false, protocols: ['i2s', 'neopixel', 'sync', 'artnet'], safetyNotes: ['Outputs drive addressable LED strips — match voltage (5V) and polarity.', 'Never attach mains/line-voltage signals to GPIO pins.'] },
+    { id: 'am006', name: 'AM-006', manufacturer: '(validation unit)', deviceType: 'multimedia-speaker', capabilities: 0x2 | 0x1, needsConditioning: true, protocols: ['analog'], safetyNotes: ['Speaker-level output: amplified, can exceed 1V — MUST be attenuated or DI-ed before any line-IN input.', 'Do NOT connect speaker output directly to a microphone/line input.', 'Voltage, level and pinout must be verified manually before integration.'] },
+    { id: 'inmp441_mic', name: 'Omnidirectional I2S Microphone', manufacturer: 'INMP441', deviceType: 'microphone', capabilities: 0x4 | 0x1, needsConditioning: false, protocols: ['i2s'], safetyNotes: ['INMP441 module, 3.3V only.'] },
+    { id: 'led_onboard', name: 'LED Output', manufacturer: '(integrated)', deviceType: 'led-driver', capabilities: 0x80 | 0x100 | 0x200, needsConditioning: false, protocols: ['neopixel', 'rgb-pwm'], safetyNotes: [] },
+    { id: 'usb_audio', name: 'USB Audio Interface', manufacturer: 'Generic', deviceType: 'audio-interface', capabilities: 0x10 | 0x1 | 0x2, needsConditioning: false, protocols: ['usb-audio'], safetyNotes: [] },
+    { id: 'bluetooth_speaker', name: 'Bluetooth Speaker', manufacturer: 'Generic', deviceType: 'speaker', capabilities: 0x20 | 0x1, needsConditioning: false, protocols: ['a2dp', 'avrcp'], safetyNotes: ['Bluetooth pairing must be completed manually; signal level is device controlled.'] },
+    { id: 'network_audio', name: 'Network Streamer', manufacturer: 'Generic', deviceType: 'network-audio', capabilities: 0x40 | 0x1 | 0x20000, needsConditioning: false, protocols: ['airplay', 'dlna', 'raw-udp', 'stream'], safetyNotes: [] },
+    { id: 'touch_display', name: 'Touch Display', manufacturer: '(integrated)', deviceType: 'display', capabilities: 0x8000 | 0x10000 | 0x4000, needsConditioning: false, protocols: ['spi', 'lvgl'], safetyNotes: ['Drives 3.3V SPI panel — verify backlight pin rating.'] },
+    { id: 'dmx_fixture', name: 'DMX Fixture', manufacturer: 'Generic', deviceType: 'lighting-fixture', capabilities: 0x400 | 0x800 | 0x80, needsConditioning: false, protocols: ['dmx', 'artnet'], safetyNotes: ['DMX devices are addressed via universe/channel — never energize unknown fixtures.', 'DMX line is 5V differential (RS-485); verify pinout and termination.'] },
   ]
 
+  // Capability ids in bit order (bit i == CAP table index i).
+  const CAP_ORDER = ['audio_input', 'audio_output', 'microphone', 'line_in', 'usb_audio', 'bluetooth_audio', 'network_audio', 'led_output', 'addressable_led', 'rgb_pwm', 'dmx', 'artnet', 'serial', 'i2c', 'spi', 'display', 'touch', 'network', 'storage']
+  const CONN_CATALOG = [
+    { id: 'wifi', label: 'Wi-Fi' }, { id: 'ethernet', label: 'Ethernet' },
+    { id: 'bluetooth', label: 'Bluetooth' }, { id: 'usb', label: 'USB' },
+    { id: 'jack', label: '3.5mm jack' }, { id: 'rca', label: 'RCA' },
+    { id: 'xlr', label: 'XLR' }, { id: 'speaker_level', label: 'Speaker-level' },
+    { id: 'gpio', label: 'GPIO' }, { id: 'i2c', label: 'I2C' },
+    { id: 'spi', label: 'SPI' }, { id: 'dmx', label: 'DMX' },
+    { id: 'serial', label: 'Serial' }, { id: 'artnet', label: 'Art-Net UDP' },
+    { id: 'sync', label: 'Sync UDP' }, { id: 'network', label: 'Network' },
+  ]
+  const capMask = (ids: string[]) => ids.reduce((acc, id) => acc + (1 << (CAP_ORDER.indexOf(id) < 0 ? -1 : CAP_ORDER.indexOf(id))), 0)
+  const conflict = (d) => {
+    const c = d.profileId ? PROFILES.find((p) => p.id === d.profileId) : undefined
+    const cond = d.needsConditioning || !!c?.needsConditioning
+    const known = !!(d.profileId || d.status === 'safe_to_connect' || d.status === 'configured')
+    const userConfirmed = d.status === 'safe_to_connect' || d.status === 'configured'
+    return {
+      confidence: userConfirmed
+        ? { identity: 100, capability: 100, integration: cond ? 60 : 100 }
+        : known
+          ? { identity: 100, capability: 100, integration: cond ? 60 : 90 }
+          : { identity: 40, capability: 40, integration: 0 },
+      protocols: c?.protocols ?? [],
+      safetyNotes: c?.safetyNotes ?? [],
+    }
+  }
+  const integrate = (d) => {
+    const caps = d.caps ?? []
+    const rows = [
+      { kind: 'audio_source', title: 'Audio analysis input', route: 'Feed samples into the analyzer via an AudioSource adapter' },
+      { kind: 'audio_output', title: 'Playback target', route: 'Route Resonux audio output to the device (A2DP/analog)' },
+      { kind: 'led_output', title: 'Lighting output', route: 'Drive the device as a lighting output through a known LED/DMX driver' },
+      { kind: 'artnet', title: 'Art-Net receiver', route: 'Send DMX universes to the device over Wi-Fi (Art-Net)' },
+      { kind: 'sync_peer', title: 'Resonux sync peer', route: 'Join a beat-locked multi-controller audio group (multicast sync)' },
+    ]
+    const want = [['audio_input', 0], ['audio_output', 1], ['led_output', 2], ['artnet', 3], ['network', 4]]
+    const cond = d.needsConditioning
+    return want.filter(([cap]) => caps.includes(cap)).map(([, i]) => {
+      const r = rows[i]
+      return { ...r, safe: !cond }
+    })
+  }
+  const enrichDevice = (d) => {
+    const { confidence, protocols, safetyNotes } = conflict(d)
+    return { ...d, confidence, integrations: integrate(d), protocols, safetyNotes }
+  }
+
   let devices = [
-    { id: 'resonux:self', name: 'Resonux-SIM', profileId: 'resonux', connection: 'network', connectionLabel: 'Network', status: 'configured', statusLabel: 'Configured', source: 5, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['network', 'artnet', 'led_output', 'addressable_led', 'rgb_pwm', 'microphone', 'audio_input'] },
+    { id: 'resonux:self', name: 'Resonux-SIM', profileId: 'resonux', connection: 'network', connectionLabel: 'Network', status: 'configured', statusLabel: 'Configured', source: 5, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), fw: '0.9.0', role: 'master', caps: ['network', 'artnet', 'led_output', 'addressable_led', 'rgb_pwm', 'microphone', 'audio_input'] },
     { id: 'local:mic', name: 'INMP441 microphone', profileId: 'inmp441_mic', connection: 'gpio', connectionLabel: 'GPIO', status: 'configured', statusLabel: 'Configured', source: 1, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['microphone', 'audio_input'] },
     { id: 'local:led', name: 'Onboard LED strip', profileId: '', connection: 'gpio', connectionLabel: 'GPIO', status: 'configured', statusLabel: 'Configured', source: 6, persisted: true, needsConditioning: false, note: '', lastSeen: Date.now(), caps: ['led_output', 'addressable_led', 'rgb_pwm'] },
   ]
 
-  let audioState = { source: 1, autoSelect: false, preferred: 1, fallback: 0 }
+  let audioState = { source: 1, autoSelect: false, preferred: 1, fallback: 0, active: 1, reason: 'configured' }
 
   return {
     name: 'resonux-mock-api',
@@ -526,8 +575,10 @@ export default function mockDevPlugin(): Plugin {
         const devicesReply = (extra: Record<string, unknown> = {}) =>
           json(res, 200, {
             ok: true,
-            devices: devices.map((d) => ({ ...d })),
-            profiles: PROFILES.map((p) => ({ ...p })),
+            devices: devices.map((d) => enrichDevice(d)),
+            profiles: PROFILES.map((p) => ({ id: p.id, name: p.name, manufacturer: p.manufacturer, deviceType: p.deviceType, needsConditioning: p.needsConditioning })),
+            capCatalog: CAP_ORDER.map((id, i) => ({ id, label: id.replace(/_/g, ' '), bit: i })),
+            connCatalog: CONN_CATALOG,
             ...extra,
           })
 
@@ -552,7 +603,9 @@ export default function mockDevPlugin(): Plugin {
               needsConditioning: false,
               note: '',
               lastSeen: Date.now(),
-              caps: ['network', 'audio_input'],
+              fw: '0.9.0',
+              role: 'slave',
+              caps: ['network', 'audio_input', 'led_output'],
             })
           } else if (found) {
             found.lastSeen = Date.now()
@@ -600,7 +653,18 @@ export default function mockDevPlugin(): Plugin {
                 const name = String(body.name ?? '')
                 const note = String(body.note ?? '')
                 const d = devices[i]
-                if (profileId) {
+                if (body.manual === true) {
+                  d.profileId = ''
+                  d.needsConditioning = Boolean(body.needsConditioning)
+                  d.persisted = true
+                  d.source = 5
+                  d.connection = String(body.connection ?? d.connection)
+                  d.connectionLabel = CONN_CATALOG.find((c) => c.id === d.connection)?.label ?? d.connection
+                  const capsNum = Number(body.capabilities ?? 0)
+                  d.caps = CAP_ORDER.filter((_, i) => (capsNum & (1 << i)) !== 0)
+                  d.status = d.needsConditioning ? 'compatible' : 'safe_to_connect'
+                  d.statusLabel = d.needsConditioning ? 'Compatible' : 'Safe to connect'
+                } else if (profileId) {
                   const p = PROFILES.find((x) => x.id === profileId)
                   if (!p) {
                     json(res, 400, { ok: false, error: 'bad_request' })
@@ -626,17 +690,25 @@ export default function mockDevPlugin(): Plugin {
         }
 
         if (url === '/api/audio/sources' && req.method === 'GET') {
+          const hasCap = (cap: string) => devices.some((d) => d.persisted && (d.caps ?? []).includes(cap))
+          const SRC_CAP: Record<number, string> = { 2: 'line_in', 3: 'usb_audio', 4: 'bluetooth_audio', 5: 'network_audio', 6: 'audio_input' }
           json(res, 200, {
             ok: true,
             current: audioState.source,
             autoSelect: audioState.autoSelect,
             preferred: audioState.preferred,
             fallback: audioState.fallback,
+            active: audioState.active,
+            reason: audioState.reason,
             sources: SOURCES.map((s) => ({
               ...s,
               available:
-                s.id === 0 || s.id === 7 || s.id === 1 || s.id === 5,
-              current: s.id === audioState.source,
+                s.id === 0 || s.id === 7
+                  ? true
+                  : s.id === 1
+                    ? hasCap('microphone')
+                    : hasCap(SRC_CAP[s.id] ?? ''),
+              active: s.id === audioState.active,
             })),
           })
           return
@@ -655,6 +727,8 @@ export default function mockDevPlugin(): Plugin {
                   return
                 }
                 audioState.source = v
+                audioState.active = v
+                audioState.reason = 'configured'
               }
               if (body.autoSelect !== undefined) audioState.autoSelect = Boolean(body.autoSelect)
               if (body.preferredSource !== undefined) {

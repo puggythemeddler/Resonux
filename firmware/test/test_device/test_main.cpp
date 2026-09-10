@@ -6,9 +6,11 @@
 #include "audio/SourceKind.h"
 #include "audio/SourceSelector.h"
 #include "audio/TestToneSource.h"
+#include "device/DeviceInsight.h"
 #include "device/DeviceProfile.h"
 #include "device/DeviceRegistry.h"
 #include "device/DeviceTypes.h"
+#include "device/DiscoverProtocol.h"
 #include "theme/ThemeBlend.h"
 
 using namespace dev;
@@ -331,6 +333,182 @@ static void test_blend_preferred_effect_flips_at_midpoint() {
   TEST_ASSERT_EQUAL_INT(5, b.preferredEffect);
 }
 
+// ------------------------------------------------------------- discover codec
+static void test_discover_roundtrip() {
+  char buf[192];
+  buildDiscoverResponse(buf, sizeof(buf), "wifi:resonux-3", "Node Lights",
+                        "network", CAP_AUDIO_INPUT | CAP_NETWORK, SRC_NETWORK,
+                        "0.9.0", "slave");
+  DiscoverEnvelope e = parseDiscoverResponse(buf, (int)strlen(buf));
+  TEST_ASSERT_TRUE(e.valid);
+  TEST_ASSERT_EQUAL_STRING("wifi:resonux-3", e.id);
+  TEST_ASSERT_EQUAL_STRING("Node_Lights", e.name);  // space sanitized
+  TEST_ASSERT_EQUAL_STRING("0.9.0", e.fw);
+  TEST_ASSERT_EQUAL_STRING("slave", e.role);
+  TEST_ASSERT_EQUAL((int)CONN_NETWORK, (int)e.conn);
+  TEST_ASSERT_EQUAL((int)SRC_NETWORK, (int)e.source);
+  TEST_ASSERT_EQUAL_UINT32(CAP_AUDIO_INPUT | CAP_NETWORK, e.caps);
+}
+
+static void test_discover_garbage_is_invalid() {
+  DiscoverEnvelope e = parseDiscoverResponse("HELLO WHO ARE YOU", 17);
+  TEST_ASSERT_FALSE(e.valid);
+  DiscoverEnvelope e2 = parseDiscoverResponse("", 0);
+  TEST_ASSERT_FALSE(e2.valid);
+}
+
+static void test_discover_unknown_keys_ignored_and_id_required() {
+  const char* msg = "RESO-DISCOVER-RESP id=a fw=1.2 unknown=zzz role=x";
+  DiscoverEnvelope e = parseDiscoverResponse(msg, (int)strlen(msg));
+  TEST_ASSERT_TRUE(e.valid);
+  TEST_ASSERT_EQUAL_STRING("a", e.id);
+  TEST_ASSERT_EQUAL_STRING("1.2", e.fw);
+  TEST_ASSERT_EQUAL_STRING("x", e.role);
+  const char* noId = "RESO-DISCOVER-RESP fw=1.0";
+  DiscoverEnvelope e2 = parseDiscoverResponse(noId, (int)strlen(noId));
+  TEST_ASSERT_FALSE(e2.valid);
+}
+
+static void test_discover_unknown_kind_falls_back_to_network() {
+  const char* msg = "RESO-DISCOVER-RESP id=b kind=mystery caps=99 source=3";
+  DiscoverEnvelope e = parseDiscoverResponse(msg, (int)strlen(msg));
+  TEST_ASSERT_TRUE(e.valid);
+  TEST_ASSERT_EQUAL((int)CONN_NETWORK, (int)e.conn);
+  TEST_ASSERT_EQUAL_UINT32(99u, e.caps);
+  TEST_ASSERT_EQUAL((int)SRC_NETWORK, (int)e.source);
+}
+
+static void test_discover_fw_role_bounded_to_buffers() {
+  char buf[192];
+  char longFw[kMaxFwLen + 8];
+  memset(longFw, '9', sizeof(longFw));
+  longFw[sizeof(longFw) - 1] = '\0';
+  buildDiscoverResponse(buf, sizeof(buf), "wifi:x", "x", "network", CAP_NONE,
+                        SRC_NETWORK, longFw, "master");
+  DiscoverEnvelope e = parseDiscoverResponse(buf, (int)strlen(buf));
+  TEST_ASSERT_TRUE(e.valid);
+  TEST_ASSERT_EQUAL(kMaxFwLen - 1, (int)strlen(e.fw));
+  TEST_ASSERT_EQUAL_STRING("master", e.role);
+}
+
+// ---------------------------------------------------------------- confidence
+static void test_confidence_confirmed_safe_is_full() {
+  DeviceInfo d;
+  strcpy(d.id, "wifi:trusted");
+  d.source = SRC_MANUAL;
+  d.status = STATUS_SAFE_TO_CONNECT;
+  d.needsConditioning = false;
+  Confidence c = deviceConfidence(d);
+  TEST_ASSERT_EQUAL(100, c.identity);
+  TEST_ASSERT_EQUAL(100, c.capability);
+  TEST_ASSERT_EQUAL(100, c.integration);
+}
+
+static void test_confidence_configured_with_conditioning_drops_integration() {
+  DeviceInfo d;
+  strcpy(d.id, "jack:amp");
+  d.status = STATUS_CONFIGURED;
+  d.needsConditioning = true;
+  Confidence c = deviceConfidence(d);
+  TEST_ASSERT_EQUAL(100, c.identity);
+  TEST_ASSERT_EQUAL(100, c.capability);
+  TEST_ASSERT_EQUAL(60, c.integration);  // user confirmed, but levels unverified
+}
+
+static void test_confidence_discovered_unknown_is_honest() {
+  DeviceInfo d;
+  strcpy(d.id, "wifi:mystery");
+  Confidence c = deviceConfidence(d);
+  TEST_ASSERT_EQUAL(40, c.identity);
+  TEST_ASSERT_EQUAL(40, c.capability);
+  TEST_ASSERT_EQUAL(0, c.integration);
+}
+
+static void test_confidence_manual_source_is_strong_but_not_full() {
+  DeviceInfo d;
+  strcpy(d.id, "rca:thing");
+  d.source = SRC_MANUAL;
+  Confidence c = deviceConfidence(d);
+  TEST_ASSERT_EQUAL(85, c.identity);
+  TEST_ASSERT_EQUAL(85, c.capability);
+  TEST_ASSERT_EQUAL(95, c.integration);
+}
+
+// --------------------------------------------------------------- integrations
+static void test_integrations_map_capabilities() {
+  DeviceInfo d;
+  strcpy(d.id, "gpio:rig");
+  d.capabilities = CAP_AUDIO_INPUT | CAP_LED_OUTPUT | CAP_NETWORK;
+  IntegrationRec recs[8];
+  int n = recommendIntegrations(d, recs, 8);
+  TEST_ASSERT_EQUAL(5, n);  // stable rows, recommended flags on the wire
+  TEST_ASSERT_EQUAL_STRING("audio_source", recs[0].kind);
+  TEST_ASSERT_TRUE(recs[0].recommended);
+  TEST_ASSERT_TRUE(recs[0].safe);
+  TEST_ASSERT_EQUAL_STRING("audio_output", recs[1].kind);
+  TEST_ASSERT_FALSE(recs[1].recommended);
+  TEST_ASSERT_EQUAL_STRING("led_output", recs[2].kind);
+  TEST_ASSERT_TRUE(recs[2].recommended);
+  TEST_ASSERT_TRUE(recs[2].safe);
+  TEST_ASSERT_EQUAL_STRING("artnet", recs[3].kind);
+  TEST_ASSERT_FALSE(recs[3].recommended);
+  TEST_ASSERT_EQUAL_STRING("sync_peer", recs[4].kind);
+  TEST_ASSERT_TRUE(recs[4].recommended);
+}
+
+static void test_integrations_conditioning_blocks_safety_only() {
+  DeviceInfo d;
+  strcpy(d.id, "speaker:amp");
+  d.capabilities = CAP_AUDIO_OUTPUT;
+  d.needsConditioning = true;
+  IntegrationRec recs[8];
+  int n = recommendIntegrations(d, recs, 8);
+  TEST_ASSERT_EQUAL(5, n);
+  TEST_ASSERT_TRUE(recs[1].recommended);
+  TEST_ASSERT_FALSE(recs[1].safe);  // recommended, but levels unverified
+  TEST_ASSERT_FALSE(recs[2].recommended);  // no LED capability
+}
+
+static void test_integrations_empty_without_caps() {
+  DeviceInfo d;
+  strcpy(d.id, "usb:0");
+  d.capabilities = CAP_NONE;
+  IntegrationRec recs[8];
+  int n = recommendIntegrations(d, recs, 8);
+  TEST_ASSERT_EQUAL(5, n);
+  for (int i = 0; i < n; ++i) TEST_ASSERT_FALSE(recs[i].recommended);
+  TEST_ASSERT_FALSE(recs[0].safe);
+}
+
+static void test_integrations_respect_output_limit() {
+  DeviceInfo d;
+  strcpy(d.id, "wifi:all");
+  d.capabilities = CAP_AUDIO_INPUT | CAP_AUDIO_OUTPUT | CAP_LED_OUTPUT |
+                   CAP_ARTNET | CAP_NETWORK;
+  IntegrationRec recs[2];
+  TEST_ASSERT_EQUAL(2, recommendIntegrations(d, recs, 2));
+}
+
+// ---------------------------------------------------------- source enablement
+static void test_device_enables_audio_sources() {
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_MICROPHONE, SOURCE_MIC));
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_LINE_IN, SOURCE_LINE_IN));
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_USB_AUDIO, SOURCE_USB_AUDIO));
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_BLUETOOTH_AUDIO, SOURCE_BLUETOOTH));
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_NETWORK_AUDIO, SOURCE_NETWORK));
+  TEST_ASSERT_TRUE(deviceEnablesSource(CAP_AUDIO_INPUT, SOURCE_DEVICE));
+  TEST_ASSERT_FALSE(deviceEnablesSource(CAP_AUDIO_OUTPUT, SOURCE_MIC));
+  TEST_ASSERT_FALSE(deviceEnablesSource(CAP_NONE, SOURCE_NONE));
+  TEST_ASSERT_FALSE(deviceEnablesSource(CAP_AUDIO_INPUT, SOURCE_TEST));
+}
+
+// ------------------------------------------------------------ manual declare
+static void test_manual_declare_status() {
+  TEST_ASSERT_EQUAL((int)STATUS_SAFE_TO_CONNECT,
+                    (int)manualDeclareStatus(false));
+  TEST_ASSERT_EQUAL((int)STATUS_COMPATIBLE, (int)manualDeclareStatus(true));
+}
+
 // --------------------------------------------------------------------- main
 int main(int argc, char** argv) {
   (void)argc;
@@ -362,5 +540,20 @@ int main(int argc, char** argv) {
   RUN_TEST(test_blend_endpoints);
   RUN_TEST(test_blend_midpoint_scalar_and_colour);
   RUN_TEST(test_blend_preferred_effect_flips_at_midpoint);
+  RUN_TEST(test_discover_roundtrip);
+  RUN_TEST(test_discover_garbage_is_invalid);
+  RUN_TEST(test_discover_unknown_keys_ignored_and_id_required);
+  RUN_TEST(test_discover_unknown_kind_falls_back_to_network);
+  RUN_TEST(test_discover_fw_role_bounded_to_buffers);
+  RUN_TEST(test_confidence_confirmed_safe_is_full);
+  RUN_TEST(test_confidence_configured_with_conditioning_drops_integration);
+  RUN_TEST(test_confidence_discovered_unknown_is_honest);
+  RUN_TEST(test_confidence_manual_source_is_strong_but_not_full);
+  RUN_TEST(test_integrations_map_capabilities);
+  RUN_TEST(test_integrations_conditioning_blocks_safety_only);
+  RUN_TEST(test_integrations_empty_without_caps);
+  RUN_TEST(test_integrations_respect_output_limit);
+  RUN_TEST(test_device_enables_audio_sources);
+  RUN_TEST(test_manual_declare_status);
   return UNITY_END();
 }

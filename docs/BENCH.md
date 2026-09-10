@@ -186,6 +186,36 @@ rows (`/devices.json`), and an audio-source selector.
 tone drives the bar graph with no mic attached; un-known devices stay
 `Detected`/`needs_investigation`; theme switches fade smoothly.
 
+## 14. Device insights + manual identification
+
+Extends §13 with confidence, integration hints, catalogs, and a manual
+declaration path (pure codec + insight logic are host-tested; below is the
+end-to-end check).
+
+1. **Catalogs:** `GET /api/devices` returns `capCatalog` (bit-ordered) and
+   `connCatalog`; the Manual identify form lists them — capability bit `1 << i`
+   matches catalog index `i` exactly, so an id="audio_input" chip is bit 0.
+2. **Insights:** expand Details on `resonux:self` — integrations show
+   "Lighting output", "Art-Net receiver", "Audio analysis input" (safe);
+   confidence shows 100/100/100. A freshly *detected* (un-identified) peer
+   shows 40/40/0 and no integrations. A manually declared speaker-level device
+   shows its integration as present but flagged "verify first" (safe=false).
+3. **Active-source reason:** the audio card shows "Active source: … — reason:
+   Configured source" (or `test_tone`, `auto_preferred`, `sync_slave` in a
+   master/slave rig). Setting the source on the web flips it to a
+   configured/auto reason and the micro-controller agrees on the next boot.
+4. **Conditioning lock:** identify a scanned row as AM-006, then try to declare
+   a *clean* (`needsConditioning:false`) manual identity from the form — no
+   capability selection may elevate it past `compatible`, and the analog
+   speaker profile must never offer `safe_to_connect`.
+5. **Wire codec:** with two controllers on the bench, the responder advertises
+   `fw=0.9.0 role=master|slave` in the reply; stop a peer and re-scan — the
+   trust flags/profile of an already-identified row must survive the rescan.
+
+**Pass:** sources appearing/disappearing in the selector match trusted devices,
+the reason line is truthful at boot, manual declares persist, and re-detection
+never downgrades a configured row.
+
 ## Safety / power notes
 
 - Common ground between PSU, strips and S3; never run strip current through the

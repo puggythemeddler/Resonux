@@ -13,8 +13,12 @@ offline on the controller's own Wi-Fi AP.
 (`web/mockDevPlugin.ts`) serves `*/api/status`, `*/api/frame`, `*/api/config`
 (GET/PUT), `*/api/themes` (GET/PUT/DELETE + `select`/`reset`), `*/api/state`
 (+ `brightness`/`sensitivity`/`backlight`/`timeout`/`effect`),
-`*/api/devices` (GET + `scan`), `*/api/device` (GET/POST/DELETE), `*/api/audio/sources` 
-(GET) + `*/api/audio/source` (POST), `*/api/system/*` (status/restart/power-off,
+`*/api/devices` (GET + `scan`, incl. `capCatalog` + `connCatalog` + per-row
+`confidence`/`integrations`/`protocols`/`safetyNotes`/`fw`/`role`),
+`*/api/device` (GET/POST/DELETE, incl. the `manual` identify branch),
+`*/api/audio/sources` (GET, incl. `active` + `reason` and device-derived
+`available`) + `*/api/audio/source` (POST), `*/api/system/*`
+(status/restart/power-off,
 with a simulated offline window on restart), `*/api/reboot` and `*/api/ota`, so
 the whole UI can be developed and demoed with no hardware.
 
@@ -111,6 +115,7 @@ flicker).
 | `/power` Power | PSU sizing helper, per-strip current estimate, limits |
 | `/system` System | device name, Wi-Fi mode/AP config, OTA, reboot, firmware info |
 | `/themes` Themes | implemented: palette swatches + brightness/saturation, response + animation curves; select (global/per-strip), create/edit/delete non-built-ins, reset defaults |
+| `/devices` Devices & Sources | device table (capability chips, status, identify/configure/remove, **Details** expander with confidence %, integration hints, protocols & safety notes, fw/role/last-seen, **Manual identify** form using `capCatalog` + `connCatalog`), audio-source card with availability + **Active source / reason**; scans register peers without clobbering trust |
 | `/diagnostics` Diagnostics | mic detect, audio level, FFT ok, LED-driver ok, memory, CPU, config version, errors (spec §31) |
 
 ## 5. Live data & preview

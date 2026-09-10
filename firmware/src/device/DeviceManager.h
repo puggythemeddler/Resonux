@@ -1,6 +1,7 @@
 #pragma once
 #include "config/Config.h"
 #include "device/DeviceRegistry.h"
+#include "device/DiscoverProtocol.h"
 #include <ArduinoJson.h>
 #include <WiFiUdp.h>
 #include <cstdint>
@@ -14,12 +15,6 @@ using dev::DeviceRegistry;
 // registry is persisted (trusted/configured rows) to LittleFS `devices.json`.
 // Local hardware is projected into the same registry so the web UI and audio
 // source selector speak one vocabulary for all sources.
-
-// Discovery transport (distinct from the sync multicast group/port).
-inline constexpr uint16_t kDiscoverPort = 9770;
-inline constexpr char kDiscoverGroup[] = "239.255.42.10";
-inline constexpr char kDiscoverProbe[] = "RESO_DISCOVER v1\n";
-inline constexpr char kDiscoverResp[] = "RESO-DISCOVER-RESP";
 
 class DeviceStore {
  public:
@@ -49,6 +44,11 @@ class DeviceManager {
   bool identify(const char* id, const char* profileId);
   bool configure(const char* id, const char* name, const char* note);
   bool remove(const char* id);
+  // Manual identification (§22): user asserts a name, connection and
+  // capabilities (no builtin profile). Clean declarations become safe-to-
+  // connect; "conditioning required" declarations stay at compatible.
+  bool declare(const char* id, const char* name, dev::ConnectionType conn,
+               uint32_t caps, bool wantsConditioning, const char* note);
 
   void jsonList(JsonDocument& doc) const;
   bool persistenceOk() const { return _storeOk; }
@@ -62,6 +62,7 @@ class DeviceManager {
   DeviceRegistry _registry;
   DeviceStore _store;
   WiFiUDP _udp;
+  char _selfRole[dev::kMaxRoleLen] = "standalone";
   bool _responderUp = false;
   bool _storeOk = false;
   uint8_t _rxBuf[512];

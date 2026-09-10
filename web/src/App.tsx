@@ -30,10 +30,18 @@ type Frame = {
   peaks?: number[]
 }
 
+type IntegrationRec = {
+  kind: string
+  title: string
+  route: string
+  safe: boolean
+}
+
 type Device = {
   id: string
   name: string
   profileId?: string
+  capabilities?: number
   connection?: string
   connectionLabel?: string
   status?: string
@@ -44,6 +52,12 @@ type Device = {
   note?: string
   lastSeen?: number
   caps?: string[]
+  fw?: string
+  role?: string
+  protocols?: string[]
+  safetyNotes?: string[]
+  confidence?: { identity: number; capability: number; integration: number }
+  integrations?: IntegrationRec[]
 }
 
 type DeviceProfileRow = {
@@ -55,10 +69,14 @@ type DeviceProfileRow = {
   needsConditioning?: boolean
 }
 
+type CatalogRow = { id: string; label: string }
+
 type DevicesData = {
   ok: boolean
   devices: Device[]
   profiles: DeviceProfileRow[]
+  capCatalog?: CatalogRow[]
+  connCatalog?: CatalogRow[]
 }
 
 type AudioSourceRow = {
@@ -67,10 +85,13 @@ type AudioSourceRow = {
   label: string
   available: boolean
   current: boolean
+  active?: boolean
 }
 
 type AudioSourcesData = {
   ok: boolean
+  active: number
+  reason?: string
   current: number
   autoSelect: boolean
   preferred: number
@@ -150,6 +171,15 @@ const DEFAULT_DRAFT: ThemeDraft = {
   palette: ['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'],
   bass: 1, lowMid: 1, mid: 1, highMid: 1, treble: 1, beat: 1, amp: 1,
   movement: 0.5, pulse: 0.5, flash: 0.25, sparkle: 0.3, smoothing: 0.3, contrast: 0.5, density: 0.5,
+}
+
+const SOURCE_REASON_LABELS: Record<string, string> = {
+  configured: 'Configured source',
+  auto_preferred: 'Preferred source available',
+  auto_fallback: 'Preferred unavailable — using fallback',
+  auto_none: 'No source available — idle',
+  test_tone: 'Test tone selected',
+  sync_slave: 'Sync slave — frames arrive over the network',
 }
 
 const fmt = (ms: number) => {
@@ -325,6 +355,11 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editNote, setEditNote] = useState('')
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [manualId, setManualId] = useState<string | null>(null)
+  const [manualConn, setManualConn] = useState('bluetooth')
+  const [manualCaps, setManualCaps] = useState<Record<string, boolean>>({})
+  const [manualCond, setManualCond] = useState(false)
   const [audio, setAudio] = useState<AudioSourcesData | null>(null)
   const [audioMsg, setAudioMsg] = useState('')
 
@@ -587,6 +622,51 @@ export default function App() {
         }
       },
     })
+
+  const declareManual = async (d: Device) => {
+    const catalog = devicesData?.capCatalog ?? []
+    const bits = Object.entries(manualCaps)
+      .filter(([, on]) => on)
+      .map(([id]) => id)
+    if (bits.length === 0) {
+      setDevicesErr('Select at least one capability.')
+      return
+    }
+    // Capability bit positions match the firmware capability table order
+    // (CAP_AUDIO_INPUT = bit 0, ...), which is how the catalog is emitted.
+    let mask = 0
+    for (const bit of bits) {
+      const i = catalog.findIndex((c) => c.id === bit)
+      if (i >= 0) mask += 1 << i
+    }
+    if (mask === 0) {
+      setDevicesErr('Unknown capability ids.')
+      return
+    }
+    try {
+      const r = await fetch('/api/device?id=' + encodeURIComponent(d.id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manual: true,
+          name: d.name || d.id,
+          connection: manualConn,
+          capabilities: mask,
+          needsConditioning: manualCond,
+          note: 'User-identified device',
+        }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setManualId(null)
+      setDevicesErr('')
+      await loadDevices()
+    } catch (e) {
+      setDevicesErr((e as Error).message)
+    }
+  }
 
   const loadAudio = useCallback(async () => {
     try {
@@ -1033,9 +1113,15 @@ export default function App() {
                             >
                               Configure
                             </button>
+                            {!d.profileId && (
+                              <button onClick={() => setManualId(d.id)}>Manual…</button>
+                            )}
                             <button className="danger" onClick={() => deleteDevice(d)}>Remove</button>
                           </>
                         )}
+                        <button onClick={() => setDetailId(detailId === d.id ? null : d.id)}>
+                          {detailId === d.id ? 'Hide details' : 'Details'}
+                        </button>
                       </div>
                       {editingId === d.id && (
                         <div className="device-edit">
@@ -1053,6 +1139,105 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                      {manualId === d.id && (
+                        <div className="device-edit">
+                          <h4>Manually identify "{d.name}"</h4>
+                          <p className="muted">
+                            For devices automatic discovery can't name. You confirm what it is and how it
+                            connects — Resonux then treats it as trusted for that capability set.
+                          </p>
+                          <div className="row">
+                            <label>Connection</label>
+                            <select value={manualConn} onChange={(e) => setManualConn(e.target.value)}>
+                              {(devicesData?.connCatalog ?? []).map((c) => (
+                                <option key={c.id} value={c.id}>{c.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="caps-pick">
+                            {(devicesData?.capCatalog ?? []).map((c) => (
+                              <label key={c.id} className="pick">
+                                <input
+                                  type="checkbox"
+                                  checked={!!manualCaps[c.id]}
+                                  onChange={(e) => setManualCaps((s) => ({ ...s, [c.id]: e.target.checked }))}
+                                />
+                                {c.label}
+                              </label>
+                            ))}
+                          </div>
+                          <div className="row">
+                            <label>Conditioning required</label>
+                            <input
+                              type="checkbox"
+                              checked={manualCond}
+                              onChange={(e) => setManualCond(e.target.checked)}
+                            />
+                          </div>
+                          <p className="muted">
+                            {manualCond
+                              ? 'The device will be marked compatible, not safe to connect — verify signal levels before wiring.'
+                              : 'A clean declaration makes the device safe to connect for the selected capabilities.'}
+                          </p>
+                          <div className="actions">
+                            <button className="primary" onClick={() => declareManual(d)}>Save manual identity</button>
+                            <button onClick={() => setManualId(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {detailId === d.id && (
+                        <div className="device-detail">
+                          {d.integrations && d.integrations.length > 0 && (
+                            <>
+                              <h4>Possible integrations</h4>
+                              <ul className="integ-list">
+                                {d.integrations.map((it) => (
+                                  <li key={it.kind}>
+                                    {it.safe ? '✓' : '•'} <strong>{it.title}</strong>
+                                    <span className="muted"> — {it.route}</span>
+                                    {!it.safe && <span className="badge cond">verify first</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                          {d.confidence && (
+                            <>
+                              <h4>Confidence</h4>
+                              <div className="conf-row">
+                                <span>Identity <b>{d.confidence.identity}%</b></span>
+                                <span>Capabilities <b>{d.confidence.capability}%</b></span>
+                                <span>Integration <b>{d.confidence.integration}%</b></span>
+                              </div>
+                            </>
+                          )}
+                          {(d.protocols && d.protocols.length > 0) && (
+                            <>
+                              <h4>Protocols</h4>
+                              <div className="caps-cell">
+                                {d.protocols.map((p) => <span key={p} className="chip">{p}</span>)}
+                              </div>
+                            </>
+                          )}
+                          {d.safetyNotes && d.safetyNotes.length > 0 && (
+                            <>
+                              <h4>Safety</h4>
+                              <ul className="safety-list">
+                                {d.safetyNotes.map((s, i) => <li key={i}>{s}</li>)}
+                              </ul>
+                            </>
+                          )}
+                          <div className="meta">
+                            <span>Last seen {(() => {
+                              const age = Math.max(0, (status?.uptimeMs ?? 0) - (d.lastSeen ?? 0))
+                              return fmt(age) + ' ago'
+                            })()}</span>
+                            {d.fw && <span>Firmware {d.fw}</span>}
+                            {d.role && <span>Role {d.role}</span>}
+                            {d.note && <span>Note: {d.note}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1066,6 +1251,14 @@ export default function App() {
             {audioMsg && <div className={audioMsg.startsWith('saved') ? 'ok' : 'err'}>{audioMsg}</div>}
             {audio && (
               <>
+                <div className="row">
+                  <p className="active-source">
+                    <strong>Active source:</strong> {(audio.sources.find((s) => s.id === (audio.active ?? audio.current))?.label) ?? '—'}
+                    {audio.reason && (
+                      <span className="muted"> — reason: {SOURCE_REASON_LABELS[audio.reason] ?? audio.reason}</span>
+                    )}
+                  </p>
+                </div>
                 <div className="row">
                   <label>Input source</label>
                   <select

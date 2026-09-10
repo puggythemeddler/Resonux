@@ -16,7 +16,13 @@ namespace dev {
 constexpr int kMaxDeviceIdLen  = 40;
 constexpr int kMaxDeviceNameLen = 40;
 constexpr int kMaxProfileIdLen = 24;
+constexpr int kMaxFwLen        = 16;
+constexpr int kMaxRoleLen      = 12;
 constexpr int kMaxCapFloat     = 1.0f;  // reserved for future confidence fields
+
+// Reported by the device itself (web/status, peer discovery). Kept in the pure
+// type layer so host tests and the discovery codec agree on one truth.
+inline constexpr char kFirmwareVersion[] = "0.9.0";
 
 // ----------------------------------------------------------------- capabilities
 enum Capability : uint32_t {
@@ -241,6 +247,8 @@ struct DeviceInfo {
   char            id[kMaxDeviceIdLen] = "";
   char            name[kMaxDeviceNameLen] = "";
   char            profileId[kMaxProfileIdLen] = "";
+  char            fw[kMaxFwLen] = "";      // advertised by peer controllers
+  char            role[kMaxRoleLen] = "";  // sync role seen on peers (master/slave/...)
   uint32_t        capabilities = CAP_NONE;
   ConnectionType  connection = CONN_UNKNOWN;
   DeviceStatus    status = STATUS_DETECTED;
@@ -255,6 +263,8 @@ inline void deviceClear(DeviceInfo& d) {
   memset(d.id, 0, sizeof(d.id));
   memset(d.name, 0, sizeof(d.name));
   memset(d.profileId, 0, sizeof(d.profileId));
+  memset(d.fw, 0, sizeof(d.fw));
+  memset(d.role, 0, sizeof(d.role));
   d.capabilities = CAP_NONE;
   d.connection = CONN_UNKNOWN;
   d.status = STATUS_DETECTED;

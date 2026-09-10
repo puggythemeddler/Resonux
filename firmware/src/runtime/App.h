@@ -37,6 +37,8 @@ public:
   int  preferredSource() const { return _config.preferredSource; }
   bool setPreferredSource(int kind);         // persists (no reboot semantics)
   bool setAutoSelect(bool on);               // persists
+  int  activeAudioSource() const { return _resolvedSource; }
+  const char* audioSourceReason() const { return _sourceReason; }
 
   bool takeFrame(AudioFrame& out);
   bool setMasterBrightness(uint8_t value);   // live, persists (no reboot)
@@ -75,6 +77,8 @@ private:
   AudioSource*    _source = nullptr;
   AudioAnalyzer*  _analyzer = nullptr;
   DeviceManager   _devices;
+  int             _resolvedSource = 1;   // source actually used this boot
+  char            _sourceReason[20] = "configured";
   StripRuntime*   _strips[kMaxStrips] = {nullptr};
   int             _stripCount = 0;
 

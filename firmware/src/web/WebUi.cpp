@@ -3,6 +3,7 @@
 #include "audio/SourceKind.h"
 #include "config/ConfigStore.h"
 #include "device/DeviceManager.h"
+#include "device/DeviceInsight.h"
 #include "device/DeviceProfile.h"
 #include "network/WifiManager.h"
 #include "runtime/App.h"
@@ -494,6 +495,19 @@ void WebUi::sendDevices() {
     o["capabilities"] = p->capabilities;
     o["needsConditioning"] = p->needsConditioning;
   }
+  // Catalogs so the manual-identify form never hard-codes capability ids.
+  JsonArray ccat = doc["capCatalog"].to<JsonArray>();
+  for (int c = 0; c < dev::kCapabilityCount; ++c) {
+    JsonObject o = ccat.add<JsonObject>();
+    o["id"] = dev::capabilityAt(c).id;
+    o["label"] = dev::capabilityAt(c).label;
+  }
+  JsonArray cconn = doc["connCatalog"].to<JsonArray>();
+  for (int c = 0; c < dev::kConnectionCount - 1; ++c) {
+    JsonObject o = cconn.add<JsonObject>();
+    o["id"] = dev::connectionAt(c).id;
+    o["label"] = dev::connectionAt(c).label;
+  }
   String out;
   serializeJson(doc, out);
   _server.send(200, "application/json", out);
@@ -574,8 +588,26 @@ void WebUi::handleDevice() {
     const char* note =
         body["note"].is<const char*>() ? body["note"].as<const char*>() : nullptr;
     bool ok = true;
-    if (profileId && profileId[0]) ok = ok && dm.identify(id.c_str(), profileId);
-    if (name || note) ok = ok && dm.configure(id.c_str(), name, note);
+    // Manual identification: user asserts name/connection/capabilities without
+    // a builtin profile (§22). Clean declares become safe-to-connect; ones
+    // flagged "conditioning required" stay compatible until levels are known.
+    if (body["manual"].is<bool>() && body["manual"].as<bool>()) {
+      const char* connIdent = body["connection"].is<const char*>()
+                                  ? body["connection"].as<const char*>()
+                                  : nullptr;
+      const uint32_t caps =
+          body["capabilities"].is<uint32_t>() ? body["capabilities"].as<uint32_t>() : dev::CAP_NONE;
+      const bool cond = body["needsConditioning"].is<bool>()
+                            ? body["needsConditioning"].as<bool>()
+                            : false;
+      dev::ConnectionType conn =
+          connIdent ? dev::connectionFromIdent(connIdent) : dev::CONN_UNKNOWN;
+      ok = conn != dev::CONN_UNKNOWN && dm.declare(id.c_str(), name, conn, caps,
+                                                   cond, note);
+    } else {
+      if (profileId && profileId[0]) ok = ok && dm.identify(id.c_str(), profileId);
+      if (name || note) ok = ok && dm.configure(id.c_str(), name, note);
+    }
     if (!ok) {
       doc["ok"] = false;
       doc["error"] = "bad_request";
@@ -597,9 +629,27 @@ void WebUi::handleDevice() {
 void WebUi::sendAudioSources() {
   const Config& cfg = _app->config();
   const bool slave = cfg.sync.enabled && cfg.sync.role == SYNC_SLAVE;
+  const int active = _app->activeAudioSource();
+
+  // Which device-provided sources are real right now: a trusted (persisted)
+  // device row whose capabilities include the matching capability turns a
+  // "reserved" source into an available one.
+  bool devCaps[SOURCE_COUNT] = {false};
+  const dev::DeviceRegistry& reg = _app->devices().registry();
+  for (int i = 0; i < reg.count(); ++i) {
+    const dev::DeviceInfo* d = reg.at(i);
+    if (!d || !d->persisted) continue;
+    for (int k = SOURCE_NONE; k < SOURCE_COUNT; ++k) {
+      if (dev::deviceEnablesSource(d->capabilities, (SourceKind)k)) {
+        devCaps[k] = true;
+      }
+    }
+  }
 
   JsonDocument doc;
   doc["ok"] = true;
+  doc["active"] = active;
+  doc["reason"] = _app->audioSourceReason();
   doc["current"] = cfg.audioSource;
   doc["autoSelect"] = cfg.autoSelectSource;
   doc["preferred"] = cfg.preferredSource;
@@ -617,7 +667,7 @@ void WebUi::sendAudioSources() {
         available = !slave;
         break;
       default:
-        available = false;  // reserved until a device binding exists
+        available = devCaps[k];
         break;
     }
     JsonObject o = opts.add<JsonObject>();
@@ -625,7 +675,7 @@ void WebUi::sendAudioSources() {
     o["ident"] = sourceKindIdent((SourceKind)k);
     o["label"] = sourceKindLabel((SourceKind)k);
     o["available"] = available;
-    o["current"] = (k == cfg.audioSource);
+    o["active"] = (k == active);
   }
   String out;
   serializeJson(doc, out);

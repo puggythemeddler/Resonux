@@ -603,11 +603,67 @@ Arduino-ESP32 built-ins (Ph 4).
     is driven by `ThemeEngine`; `themeTransitionMs` (default 500) fades instead
     of snapping, `0` keeps the legacy instant switch. Uses the AUTO stage name
     as cache key so auto stages take their label's blend.
+13. **Honest confidence, not "detected = known"** — every device row carries a
+    tri-layer `Confidence` (identity / capability / integration) computed from
+    trust state: user-confirmed rows score 100/100 (integration 60 if
+    conditioning is required), profile-matched 100/100, manual-only 85/85, and
+    mere network observations 40/40/0. The web shows the real numbers instead
+    of implying compatibility.
+14. **Capabilities stay bit-addressed catalogs** — bit position *is* the catalog
+    index (`capabilityAt(i)`), so `/api/devices` advertises `capCatalog` +
+    `connCatalog` and the web builds capability masks as `1 << i`. There is no
+    second capability enum duplicated in the UI and no wire-endian drift.
+15. **Audio-source availability derives from trusted devices** — a source is
+    selectable when a persisted registry row enables it
+    (`deviceEnablesSource(caps, kind)`: mic→microphone, jack→line-in, USB,
+    Bluetooth, network, and any `audio_input` device for "Device"). The boot
+    responder answers `active` source + `reason` (`sync_slave`, `test_tone`,
+    `auto_preferred/auto_fallback/auto_none`, `configured`) so the UI explains
+    *why* a source is in use rather than silently switching.
+16. **Manual identification is first-class** — `DeviceManager::declare()`
+    accepts a user-asserted id/name/connection/capability mask. A clean
+    declaration becomes `safe_to_connect`; one flagged "conditioning required"
+    stays `compatible` until levels are verified. It carries an explicit
+    `SRC_MANUAL` source tag so it is never confused with a profile match.
+17. **One wire codec, host-tested** — `DiscoverProtocol.h` is a pure encoder/
+    decoder (no Arduino) used by the responder and future host tools; the
+    parser is lenient (unknown keys ignored) so older responders and newer
+    scanners interoperate (see §16b).
 
 > **Electrical safety is a hard requirement, not software.** Power limiting
 > caps *visible* brightness/current in software; fuses, correct PSU sizing,
 > MOSFETs and wiring protect the hardware. GPIOs carry signals, never strip
 > power. Explicit guidance: `HARDWARE.md`.
+
+---
+
+## 16b. RESO_DISCOVER wire protocol (v1)
+
+A single UDP datagram, multicast on `239.255.42.10:9770`.
+
+- **Probe** (sent by scanners, `UDPMulti` socket): `"RESO_DISCOVER v1\n"`
+- **Reply** (sent by every Resonux controller's `DeviceManager`):
+
+```
+RESO-DISCOVER-RESP id=<id> name=<name> kind=<conn> caps=<n> source=<s> fw=<v> role=<r>
+```
+
+Rules, implemented once in `device/DiscoverProtocol.h`:
+
+- Plain `space` between tokens, `key=value`, values with spaces encode spaces as
+  `_` (e.g. `name=Node_Lights`) so the token stream round-trips.
+- `kind` is a `ConnectionType` ident (`network`, `bluetooth`, `usb`, …);
+  unknown idents fall back to `network` on decode for forward compatibility.
+- `caps` is the decimal capability bitmask.
+- `source` is the decimal `DiscoverySource`; invalid values default to
+  `SRC_NETWORK`.
+- The parser ignores unknown keys (older responders vs newer scanners) and
+  requires `id=` for a datagram to be considered valid.
+- All string fields are bounded by `kMaxDeviceIdLen` / `kMaxDeviceNameLen` /
+  `kMaxFwLen` / `kMaxRoleLen`; a truncated reply simply carries shorter values.
+- The scanner merges the result via `DeviceManager::processInbound`, which
+  never clobbers an existing persisted/trusted row's status, profile, or
+  conditioning flag — rescanning a configured device cannot downgrade it.
 
 ---
 
@@ -811,7 +867,7 @@ G:\LED project\
 │   │   ├── main.cpp
 │   │   ├── util\               Rgb/HSL/palette helper, Smoother, Log
 │   │   ├── audio\              AudioSource|I2SMicSource|AudioAnalyzer|BeatDetector|TestToneSource|SourceSelector|SourceKind
-│   │   ├── device\             DeviceTypes|DeviceProfile|DeviceRegistry|DeviceManager (discovery + /devices.json)
+│   │   ├── device\             DeviceTypes|DeviceProfile|DeviceRegistry|DeviceManager (discovery + /devices.json)|DeviceInsight (confidence/integrations)|DiscoverProtocol (pure wire codec)
 │   │   ├── theme\              ThemeEngine + ThemeBlend (cross-fade)
 │   │   ├── led\                LEDDriver|addressable\ |analog\ |single\ |factory\
 │   │   ├── effects\            Effect|LedFrame|EffectParams|EffectRegistry|fx\…
@@ -822,7 +878,8 @@ G:\LED project\
 │   ├── data\                   LittleFS: web assets + default config.json
 │   └── test\                   host unit tests (x86 target)
 ├── web\                        TypeScript + React (Vite)
-│   ├── src\components|pages|services|api|hooks|styles
+│   ├── src\                    App.tsx (single-page dashboard) + index.css
+│   ├── mockDevPlugin.ts        Vite dev-server mock of the firmware /api surface
 │   └── dist\                   build output → firmware/data
 ├── tools\python\               audio-analysis lab, simulators, power_calculator
 └── hardware\                   (later) PCB, enclosures, schematics

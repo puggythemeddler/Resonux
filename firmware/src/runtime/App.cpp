@@ -85,6 +85,22 @@ bool App::begin() {
     bootSource = (int)sel.update(0, mask);
     logBoot("audio", "auto-select: source=%s", sourceKindIdent((SourceKind)bootSource));
   }
+  _resolvedSource = bootSource;
+  if (slaveRole) {
+    strncpy(_sourceReason, "sync_slave", sizeof(_sourceReason) - 1);
+  } else if (bootSource == SOURCE_TEST) {
+    strncpy(_sourceReason, "test_tone", sizeof(_sourceReason) - 1);
+  } else if (_config.autoSelectSource) {
+    if (bootSource == _config.preferredSource) {
+      strncpy(_sourceReason, "auto_preferred", sizeof(_sourceReason) - 1);
+    } else if (bootSource == _config.fallbackSource) {
+      strncpy(_sourceReason, "auto_fallback", sizeof(_sourceReason) - 1);
+    } else {
+      strncpy(_sourceReason, "auto_none", sizeof(_sourceReason) - 1);
+    }
+  } else {
+    strncpy(_sourceReason, "configured", sizeof(_sourceReason) - 1);
+  }
 
   const bool testTone = bootSource == SOURCE_TEST;
   if (slaveRole) {

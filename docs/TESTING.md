@@ -6,13 +6,15 @@ meaningful automated tests cheap.
 
 ## 1. Host unit tests (x86, CI-friendly)
 
-**Implemented**: `pio test -e native` runs 69 Unity assertions across 4 host
+**Implemented**: `pio test -e native` runs 84 Unity assertions across 4 host
 suites — `test_logic` (colour math, smoothing, effects), `test_sync`
 (multicast clock/packet), `test_system` (restart/power-off state machine),
 `test_device` (universal detection: capability model, device registry,
 profile validation incl. the AM-006 conditioning profile, deterministic
 `classify()`, hysteresis-aware `SourceSelector` fallback/preferred logic,
-`TestToneSource`, and theme cross-fade blending) —
+`TestToneSource`, theme cross-fade blending, the RESO_DISCOVER wire codec
+round-trip/garbage/bounds, tri-layer confidence scoring, integration
+recommendation mapping, `deviceEnablesSource`, and `manualDeclareStatus`) —
 against the pure layers: `util/Rgb.h` (HSL↔RGB, palettes, blend/scale/
 luma/clamps), `util/Smoother.h`, `effects/EffectUtil.h`, `effects/LedFrame.h`,
 `audio/AudioFrame.h`, real effects (`BassPulseEffect`, `GradientEffect`),
