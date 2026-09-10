@@ -41,6 +41,20 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   low-mid-heavy) and **Auto** (hysteresis-based classifier that switches on
   sustained feature votes). Apply globally or per strip, custom effects per
   strip, and edit from the dashboard; built-ins reinstall on reset.
+- **Universal device detection** — capability-based `DeviceProfile` model:
+  every detect-able device gets *detected / compatible / safe to connect /
+  configured* states, but detection **never drives outputs**. Unknown devices
+  stay `needs_investigation`; the AM-006 validation profile is marked
+  *conditioning required*. A `RESO_DISCOVER` multicast responder/scanner finds
+  peer Resonux controllers on WiFi, and trusted rows persist to `/devices.json`
+  (`src/device/DeviceManager`).
+- **Multi-source audio input** — I2S mic for ambient sound, a built-in
+  **test tone** (`SOURCE_TEST`) for setups with no mic, or no input
+  (`SOURCE_NONE`). Boot source is auto-selected with hysteresis
+  (preferred → fallback → default) and persisted to `/config.json`.
+- **Theme cross-fades** — switching themes or an AUTO stage change blends
+  smoothly over `themeTransitionMs` (default 500 ms) instead of snapping; `0`
+  restores the legacy instant switch.
 - **Touchscreen UI** — optional LVGL GUI on a TFT panel (reference: 3.5″
   SPI ILI9488 + FT6236 capacitive touch). Now / Themes / System screens,
   screen timeout that never affects the LEDs, hardware-independent
@@ -123,7 +137,7 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 cd firmware
 pio run                          # compile default sizing (no touchscreen)
 pio run -e esp32-s3-ui           # build with LVGL touchscreen UI
-pio test -e native               # host-side unit tests (no hardware, 43 tests)
+pio test -e native               # host-side unit tests (no hardware, 69 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
@@ -167,6 +181,10 @@ from any device on the same network:
   density, preferred effects); select globally or per strip with an effect
   override, create/edit/delete non-built-ins, reset defaults.
 - **Configuration** — view/edit the full `config.json` and save (reboots).
+- **Devices & Sources** — device registry (builtin `resonux:self`, `local:mic`,
+  `local:led` rows + discovered peers), **Scan** for the multicast responder,
+  **Identify / Configure / Remove** controls, and the audio source selector
+  (source, preferred/fallback, auto-select) — settings apply on next boot.
 - **System** — status readouts, panel backlight + timeout, **Restart** and
   **Safe Power Off** (clean shutdown that silences outputs, saves config and
   deep-sleeps the device; see `docs/SYSTEM.md`).
@@ -226,7 +244,8 @@ bass/mid/treble, beat, free heap).
 ## Testing & tooling
 
 - `pio test -e native` — **host-side unit tests** for the pure logic (colour
-  math, palettes, smoothing, effect rendering, LED frame ops); runs in CI.
+  math, palettes, smoothing, effect rendering, LED frame ops, device
+  classification registry, source auto-select, theme blending); runs in CI.
 - `python tools/python/analyze.py song.mp3` — replicate the band/beat pipeline
   in NumPy; produces waveform/spectrum/band/beat/LED-sim visualizations
   (`docs/TESTING.md`).
@@ -255,14 +274,18 @@ bass/mid/treble, beat, free heap).
 Development scaffold for a **protected product path**: architecture-first,
 incremental phases (`docs/ROADMAP.md`). Phase 1 (analyzer + effects + LED
 drivers + runtime) plus Art-Net DMX output, the **web dashboard** (Live /
-Themes / Configuration / System / OTA tabs), **18 themes** (data-driven,
-device-side + dashboard editing incl. Afro House + Auto classifier), **OTA**,
-**WifiManager**, **multi-controller multicast sync** (master/slave +
-clock-offset lock), **system controls** (graceful restart, safe power-off
-via deep sleep, live sensitivity/backlight/timeout endpoints), **host-side
-unit tests in CI** (43 pass), and the **LVGL touchscreen UI**
+Themes / Devices & Sources / Configuration / System / OTA tabs), **18
+themes** (data-driven, device-side + dashboard editing incl. Afro House +
+Auto classifier), **OTA**, **WifiManager**, **multi-controller multicast
+sync** (master/slave + clock-offset lock), **system controls** (graceful
+restart, safe power-off via deep sleep, live
+sensitivity/backlight/timeout endpoints), **universal device detection**
+(capability profiles + multicast discovery + persisted registry),
+**multi-source audio selection** (mic / test tone / none with boot
+auto-select), **theme cross-fades**, **host-side
+unit tests in CI** (69 pass), and the **LVGL touchscreen UI**
 (hardware-independent display/touch abstraction) are implemented and compile
-cleanly for ESP32-S3 (~40 % RAM / ~58 % flash at the default config, ~64 %
+cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~64 %
 flash with the touchscreen env); hardware bring-up is pending parts arrival
 (see `docs/HARDWARE.md`).
 
