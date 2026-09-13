@@ -91,8 +91,12 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   the ESP32 fuses that with its own mic analysis and *multiplies* a subtle look
   onto the theme (bounded scene memory + 8-mood intent director, spatial
   wave-propagation room mapping, cooldown-gated booms — no strobe, companion
-  dead → automatic audio-only fallback). Off by default; web Cinematic tab,
-  LVGL Cine screen and `GET/POST /api/cinematic`. See `docs/CINEMATIC.md`.
+  dead → automatic audio-only fallback). Multi-source companion picker with
+  skew estimate, **comfort tiers**, **audio/video sync offset** + link-latency
+  status, and a built-in **test/demo injector** (QA bursts / looping demo script
+  via web and touchscreen). Off by default; web Cinematic tab, LVGL Cine screen
+  and `GET/POST /api/cinematic` (+ `/api/cinematic/test`). See
+  `docs/CINEMATIC.md`.
 
 See `docs/ARCHITECTURE.md` for the full design.
 
@@ -147,7 +151,7 @@ power. Read the electrical guidance in `docs/HARDWARE.md` before scaling up.
 cd firmware
 pio run                          # compile default sizing (no touchscreen)
 pio run -e esp32-s3-ui           # build with LVGL touchscreen UI
-pio test -e native               # host-side unit tests (no hardware, 84 tests)
+pio test -e native               # host-side unit tests (no hardware, 144 tests)
 pio run -t upload                # flash via USB-C — requires the board
 pio device monitor -b 115200     # console: band/beat diagnostics every 3 s
 ```
@@ -201,10 +205,13 @@ from any device on the same network:
 - **System** — status readouts, panel backlight + timeout, **Restart** and
   **Safe Power Off** (clean shutdown that silences outputs, saves config and
   deep-sleeps the device; see `docs/SYSTEM.md`).
-- **Cinematic** — on/off, five reaction presets + genre overlay, live knobs
-  (debounced, no reboot), companion multicast link, and a live status panel
-  (scene/event, luminance/motion/prog-audio, boom/tension, companion-alive
-  indicator). See `docs/CINEMATIC.md`.
+- **Cinematic** — on/off, five reaction presets + genre overlay, **comfort tier
+  + audio/video sync offset + demo-loop toggle**, live knobs (debounced, no
+  reboot), companion multicast link (source identity + skew, link latency),
+  room-mapping wave controls, a **QA test-burst card** (scene/event/confidence/
+  dwell/wave origin — no companion needed), and a live status panel
+  (scene/event, luminance/motion/prog-audio, boom/tension, mood,
+  companion-alive indicator). See `docs/CINEMATIC.md`.
 - **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
   from the Arduino IDE (ArduinoOTA is active too).
 
@@ -217,7 +224,8 @@ either surface can drive the other. See `docs/WEB_DASHBOARD.md`.
 Build with the `esp32-s3-ui` PlatformIO env to link LVGL and enable the
 display/touch drivers. Four screens — **Now** (theme + spectrum + beat),
 **Themes** (one-tap theme selection, same state as web), **Cine** (cinematic
-toggle, preset cycle, live status — same config as the web Cinematic tab) and
+toggle, preset cycle, **QA burst button**, live status incl. link latency —
+same config as the web Cinematic tab) and
 **System** (master + screen brightness, timeout cycle, status line, **Restart**
 and **Safe Power Off** behind confirmation overlays). Screen brightness and
 timeout are configured live from either surface (`display` block in
@@ -264,7 +272,8 @@ bass/mid/treble, beat, free heap).
 - `pio test -e native` — **host-side unit tests** for the pure logic (colour
   math, palettes, smoothing, effect rendering, LED frame ops, device
   classification registry, source auto-select, theme blending, cinematic
-  codec/engine/spatial-wave — 128 tests across 5 suites); runs in CI.
+  codec/engine/spatial-wave/picker/comfort/sync-offset/injector — 144 tests
+  across 5 suites); runs in CI.
 - `python tools/python/analyze.py song.mp3` — replicate the band/beat pipeline
   in NumPy; produces waveform/spectrum/band/beat/LED-sim visualizations
   (`docs/TESTING.md`).
@@ -310,12 +319,14 @@ hints, and a manual-identify path for devices discovery can't name),
 trusted device enables them; the dashboard explains the active source's reason
 at boot), **multi-source audio selection**
 (mic / test tone / none with boot auto-select), **theme cross-fades**, **host-side
-unit tests in CI** (128 pass), **cinematic mode** (on-device mic analysis
+unit tests in CI** (144 pass), **cinematic mode** (on-device mic analysis
   fused with a companion `SceneFrame` feed over UDP multicast, bounded scene
   memory + 8-mood intent director, optional spatial block with room-mapping
   wave propagation, cooldown-gated booms and a dead-companion audio-only
-  fallback, debounced config saving; web Cinematic tab, LVGL Cine screen and
-  live `/api/cinematic` endpoints) and the **LVGL touchscreen UI**
+  fallback, multi-source companion picker, comfort tiers, audio/video sync
+  offset + link-latency status, test/demo injector with QA bursts + looping
+  demo script, debounced config saving; web Cinematic tab + QA card, LVGL Cine
+  screen + QA button and live `/api/cinematic` endpoints) and the **LVGL touchscreen UI**
 (hardware-independent display/touch abstraction) are implemented and compile
 cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~65 %
 flash with the touchscreen env); hardware bring-up is pending parts arrival
