@@ -7,16 +7,17 @@ Commit etiquette and standing rules for any work done on this repository.
 Every code, firmware, web, or tooling change must be accompanied by updates to
 the relevant documentation in the **same commit**:
 
-- `README.md` — feature bullets, Status section, and any test counts.
+- **All READMEs** — every `README.md` in the repo (root, and any under firmware/,
+  web/, tools/, etc.), wherever the touched feature/section appears.
 - `docs/*.md` — the docs that describe the touched area (e.g. feature changes
   → `docs/CINEMATIC.md` / `docs/WEB_DASHBOARD.md` / `docs/TOUCHSCREEN.md`,
   test changes → `docs/TESTING.md`, architecture → `docs/ARCHITECTURE.md`,
   plan/status → `docs/ROADMAP.md`).
 
-Specifically, whenever a host-test count changes, search the whole repo for the
-old count (patterns like `128 tests`, `84 tests`, `128 pass`) and update every
-occurrence (README + all docs). Always re-verify with
-`Select-String -Path README.md,docs/*.md` before committing.
+Whenever a host-test count changes, search the whole repo for the old count
+(patterns like `128 tests`, `84 tests`, `128 pass`) and update *every*
+occurrence in every README + all docs. Always re-verify with
+`Select-String -Path **/README.md,docs/*.md` before committing.
 
 ## General rules
 
