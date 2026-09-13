@@ -17,6 +17,10 @@
 #include "driver/gpio.h"
 #include "esp_sleep.h"
 
+namespace {
+const uint32_t kConfigSaveDebounceMs = 500u;  // batch rapid knob drags into one write
+}
+
 App& App::instance() {
   static App app;
   return app;
@@ -285,7 +289,8 @@ bool App::cameraUdpLive() const {
 bool App::setCinematicConfig(const cine::Config& c) {
   _config.cinematic = c;
   cine::clampConfig(_config.cinematic);
-  if (!ConfigStore::save(_config)) return false;
+  _pendingSaveAt = millis() + kConfigSaveDebounceMs;
+  _pendingSave = true;
   _cinEngine.configure(_config.cinematic);
 
   // (re)bind the companion listener when the receive settings change.
@@ -301,6 +306,13 @@ bool App::setCinematicConfig(const cine::Config& c) {
     _sceneLink = nullptr;
   }
   return true;
+}
+
+void App::flushPendingSave() {
+  if (_pendingSave && (int32_t)(millis() - _pendingSaveAt) >= 0) {
+    _pendingSave = false;
+    ConfigStore::save(_config);
+  }
 }
 
 bool App::requestRestart() { return startShutdown(sys::Action::Restart); }
@@ -400,6 +412,7 @@ void App::ledLoop() {
   AudioFrame f;
   takeFrame(f);
   uint32_t now = millis();
+  flushPendingSave();
   _devices.tick(now);
 
   DisplayManager& disp = DisplayManager::instance();

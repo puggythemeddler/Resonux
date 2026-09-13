@@ -65,7 +65,8 @@ public:
   const cine::Look& cinematicLook() const { return _cinEngine.look(); }
   bool cinematicActive() const { return _config.cinematic.enabled; }
   bool cameraUdpLive() const;              // companion feed fresh right now
-  bool setCinematicConfig(const cine::Config& c);  // clamps, persists, applies
+  bool setCinematicConfig(const cine::Config& c);  // clamps, applies, mirrors; save is debounced
+  void flushPendingSave();                          // fire the debounced config save, if due
 
 private:
   App() {}
@@ -96,6 +97,8 @@ private:
   SemaphoreHandle_t _mutex = nullptr;
   uint32_t        _framesCount = 0;
   uint32_t        _lastSeenFrame = 0;
+  uint32_t        _pendingSaveAt = 0;
+  bool            _pendingSave = false;
 
   ArtNetNode*     _artnet = nullptr;
   SyncNode*       _sync = nullptr;
