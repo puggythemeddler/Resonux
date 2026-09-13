@@ -217,6 +217,7 @@ void serializeCinematic(JsonObject s, const cine::Config& c) {
   s["group"] = c.group;
   s["port"] = c.port;
   s["staleMs"] = c.staleMs;
+  s["demo"] = c.demo;
 }
 
 void deserializeCinematic(JsonObject s, cine::Config& c) {
@@ -275,6 +276,7 @@ void deserializeCinematic(JsonObject s, cine::Config& c) {
   strncpy(c.group, s["group"] | c.group, sizeof(c.group) - 1);
   c.port = clampInt(s["port"] | c.port, 1024, 65535);
   c.staleMs = clampInt(s["staleMs"] | c.staleMs, 100, 10000);
+  c.demo = s["demo"] | c.demo;
 }
 
 }  // namespace

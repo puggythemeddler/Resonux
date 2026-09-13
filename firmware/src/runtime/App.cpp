@@ -19,7 +19,26 @@
 
 namespace {
 const uint32_t kConfigSaveDebounceMs = 500u;  // batch rapid knob drags into one write
-}
+
+// Built-in demo script (config `cinematic.demo`): a ~11 s loop that walks the
+// whole engine — action, flash, boom, directional scene-change sweep across the
+// room, music pulse, whisper, dark drop, dialogue — with a spatial focus pan
+// during the chase so room mapping (when enabled) gets real wave work without a
+// companion attached.
+const cine::TestEntry kCinDemoScript[] = {
+    {sceneframe::SCENE_ACTION, sceneframe::SEVENT_NONE, 100, 170, 60, 200, 190, 120, -1, -1, 2600},
+    {sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 255, 30, 200, 200, 220, -1, -1, 500},
+    {sceneframe::SCENE_EXPLOSION, sceneframe::SEVENT_BOOM, 100, 255, 20, 220, 255, 255, -1, -1, 700},
+    {sceneframe::SCENE_CHASE, sceneframe::SEVENT_CHANGE, 90, 200, 45, 180, 200, 240, 40, 128, 900},
+    {sceneframe::SCENE_CHASE, sceneframe::SEVENT_CHANGE, 90, 200, 45, 180, 200, 240, 215, 128, 900},
+    {sceneframe::SCENE_MUSIC, sceneframe::SEVENT_NONE, 100, 200, 80, 255, 200, 160, -1, -1, 1600},
+    {sceneframe::SCENE_QUIET, sceneframe::SEVENT_WHISPER, 85, 60, 120, 90, 90, 20, -1, -1, 1500},
+    {sceneframe::SCENE_ACTION, sceneframe::SEVENT_DARK, 80, 40, 60, 100, 100, 30, -1, -1, 800},
+    {sceneframe::SCENE_SPEECH, sceneframe::SEVENT_NONE, 60, 130, 90, 140, 150, 40, -1, -1, 1500},
+};
+const int kCinDemoCount =
+    (int)(sizeof(kCinDemoScript) / sizeof(kCinDemoScript[0]));
+}  // namespace
 
 App& App::instance() {
   static App app;
@@ -315,6 +334,32 @@ void App::flushPendingSave() {
   }
 }
 
+bool App::triggerCinematicTest(const cine::TestEntry& t) {
+  cine::TestEntry e = t;
+  if (e.lengthMs == 0) e.lengthMs = 800;
+  if (e.conf > 100) e.conf = 100;
+  if (e.focusX > 255) e.focusX = 255;
+  if (e.focusY > 255) e.focusY = 255;
+  _testInject.start(&e, 1, false, millis());
+  return true;
+}
+
+bool App::companionSourceLabel(char* out, size_t cap) const {
+  return _sceneLink ? _sceneLink->sourceLabel(out, cap) : false;
+}
+
+int App::companionSourceCount() const {
+  return _sceneLink ? (int)_sceneLink->picker().sourceCount() : 0;
+}
+
+int32_t App::companionSkewPpm() const {
+  return _sceneLink ? _sceneLink->picker().skewPpm() : 0;
+}
+
+uint32_t App::companionLastRxMs() const {
+  return _sceneLink ? _sceneLink->lastRxMs() : 0;
+}
+
 bool App::requestRestart() { return startShutdown(sys::Action::Restart); }
 bool App::requestPowerOff() { return startShutdown(sys::Action::PowerOff); }
 
@@ -438,10 +483,24 @@ void App::ledLoop() {
   cine::AudioFeatures caf;
   if (cineOn) {
     caf = _cinAnalyzer.process(f);
+    // demo script: arm while the config wants it (a one-shot web/touch burst
+    // runs first and the demo resumes once it is spent).
+    if (cineCfg.demo) {
+      if (!_testInject.active())
+        _testInject.start(kCinDemoScript, kCinDemoCount, true, now);
+    } else {
+      if (_testInject.looping()) _testInject.stop();
+    }
     sceneframe::Frame sf;
-    if (_sceneLink && _sceneLink->live(cineCfg.staleMs) &&
-        _sceneLink->frame(sf)) {
-      sceneframe::SpatialInfo sp;
+    sceneframe::SpatialInfo sp;
+    bool haveSpatial = false;
+    const bool injected =
+        _testInject.active() && _testInject.step(now, sf, sp, haveSpatial);
+    if (injected) {
+      _cinEngine.update(caf, &sf, now, haveSpatial ? &sp : nullptr);
+      _cinStatus = _cinEngine.status();
+    } else if (_sceneLink && _sceneLink->live(cineCfg.staleMs) &&
+               _sceneLink->frame(sf)) {
       const sceneframe::SpatialInfo* spatial =
           _sceneLink->spatial(sp) ? &sp : nullptr;
       _cinEngine.update(caf, &sf, now, spatial);

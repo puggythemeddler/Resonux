@@ -54,6 +54,7 @@ bool WebUi::begin(App& app) {
   _server.on("/api/audio/source", HTTP_POST, [this]() { handleAudioSource(); });
   _server.on("/api/cinematic", HTTP_GET, [this]() { sendCinematic(); });
   _server.on("/api/cinematic", HTTP_POST, [this]() { handleCinematicPut(); });
+  _server.on("/api/cinematic/test", HTTP_POST, [this]() { handleCinematicTest(); });
   _server.on(
       "/api/ota", HTTP_POST,
       [this]() {
@@ -730,6 +731,10 @@ void WebUi::sendCinematic() {
   cfg["genre"] = c.genre;
   cfg["genreId"] = cine::genreIdent(c.genre);
   cfg["genreLabel"] = cine::genreLabel(c.genre);
+  cfg["comfort"] = c.comfort;
+  cfg["comfortId"] = cine::comfortIdent(c.comfort);
+  cfg["comfortLabel"] = cine::comfortLabel(c.comfort);
+  cfg["syncOffsetMs"] = c.syncOffsetMs;
   cfg["sensitivity"] = c.sensitivity;
   cfg["reaction"] = c.reaction;
   cfg["visualInfluence"] = c.visualInfluence;
@@ -753,9 +758,18 @@ void WebUi::sendCinematic() {
   cfg["group"] = c.group;
   cfg["port"] = c.port;
   cfg["staleMs"] = c.staleMs;
+  cfg["demo"] = c.demo;
 
   doc["active"] = _app->cinematicActive();
   doc["companionAlive"] = _app->cameraUdpLive();
+  // source identity + skew (CompanionPicker), plus link observability
+  char srcLabel[24];
+  doc["companionSource"] =
+      _app->companionSourceLabel(srcLabel, sizeof(srcLabel)) ? srcLabel : "";
+  doc["companionSourceCount"] = _app->companionSourceCount();
+  doc["companionSkewPpm"] = _app->companionSkewPpm();
+  doc["companionLastRxMs"] = _app->companionLastRxMs();
+  doc["demoActive"] = _app->cinematicTestActive();
   JsonObject st = doc["status"].to<JsonObject>();
   st["source"] = _app->cinematicActive() ? (int)s.source : -1;
   st["scene"] = _app->cinematicActive() ? (int)s.scene : -1;
@@ -784,6 +798,8 @@ void WebUi::sendCinematic() {
   st["moodEnergy"] = s.moodEnergy;
   st["recentEvents"] = s.recentEvents;
   st["spatialActive"] = _app->cinematicActive() && s.spatialActive;
+  st["linkLatencyMs"] = s.linkLatencyMs;
+  st["jitterMs"] = s.jitterMs;
 
   String out;
   serializeJson(doc, out);
@@ -808,6 +824,9 @@ void WebUi::handleCinematicPut() {
     c.mode = doc["mode"].as<int>();
   }
   if (doc["genre"].is<int>()) c.genre = doc["genre"].as<int>();
+  if (doc["comfort"].is<int>()) c.comfort = doc["comfort"].as<int>();
+  if (doc["syncOffsetMs"].is<int>()) c.syncOffsetMs = doc["syncOffsetMs"].as<int>();
+  if (doc["demo"].is<bool>()) c.demo = doc["demo"].as<bool>();
 
   auto mergeFloat = [&doc](const char* key, float& v) {
     if (doc[key].is<float>()) v = doc[key].as<float>();
@@ -845,6 +864,29 @@ void WebUi::handleCinematicPut() {
 
   if (!_app->setCinematicConfig(c)) {
     _server.send(400, "application/json", "{\"ok\":false,\"error\":\"save_failed\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebUi::handleCinematicTest() {
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain")) != DeserializationError::Ok) {
+    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_json\"}");
+    return;
+  }
+  cine::TestEntry e;
+  if (doc["scene"].is<int>())
+    e.scene = (sceneframe::SceneKind)doc["scene"].as<int>();
+  if (doc["event"].is<int>())
+    e.event = (sceneframe::SceneEvent)doc["event"].as<int>();
+  if (doc["confidence"].is<int>()) e.conf = (uint8_t)doc["confidence"].as<int>();
+  if (doc["lengthMs"].is<int>()) e.lengthMs = (uint32_t)doc["lengthMs"].as<int>();
+  if (doc["focusX"].is<int>()) e.focusX = doc["focusX"].as<int>();
+  if (doc["focusY"].is<int>()) e.focusY = doc["focusY"].as<int>();
+
+  if (!_app->triggerCinematicTest(e)) {
+    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"inject_failed\"}");
     return;
   }
   _server.send(200, "application/json", "{\"ok\":true}");

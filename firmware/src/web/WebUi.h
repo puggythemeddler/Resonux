@@ -45,6 +45,7 @@ private:
   void handleAudioSource();           // POST /api/audio/source
   void sendCinematic();               // GET /api/cinematic
   void handleCinematicPut();          // POST /api/cinematic
+  void handleCinematicTest();         // POST /api/cinematic/test (QA burst)
   String mimeFor(const String& path);
 
   App* _app = nullptr;

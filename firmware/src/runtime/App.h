@@ -5,6 +5,7 @@
 #include "audio/AudioSource.h"
 #include "cinema/CinematicEngine.h"
 #include "cinema/SceneAnalyzer.h"
+#include "cinema/TestInjector.h"
 #include "device/DeviceManager.h"
 #include "config/Config.h"
 #include "display/DisplayManager.h"
@@ -67,6 +68,17 @@ public:
   bool cameraUdpLive() const;              // companion feed fresh right now
   bool setCinematicConfig(const cine::Config& c);  // clamps, applies, mirrors; save is debounced
   void flushPendingSave();                          // fire the debounced config save, if due
+  // One-shot test/demo burst (web QA panel or touchscreen) without touching
+  // the persisted config. `t.lengthMs` bounds the run; the engine reverts to
+  // the live feed / audio-only as soon as it is spent.
+  bool triggerCinematicTest(const cine::TestEntry& t);
+  bool cinematicTestActive() const { return _testInject.active(); }
+
+  // ---- companion source identity (CompanionPicker status) -----------------
+  bool companionSourceLabel(char* out, size_t cap) const;
+  int companionSourceCount() const;
+  int32_t companionSkewPpm() const;
+  uint32_t companionLastRxMs() const;
 
 private:
   App() {}
@@ -107,6 +119,7 @@ private:
   cine::CinematicEngine _cinEngine;        // fusion core (pure, task-safe)
   cine::SceneAnalyzer   _cinAnalyzer;      // local audio -> cinematic features
   cine::Status          _cinStatus;
+  cine::TestInjector    _testInject;      // synthetic QA/demo SceneFrame source
   SceneLinkNode*        _sceneLink = nullptr;  // companion SceneFrame receiver
 
   sys::SystemMode _sysMode;

@@ -117,6 +117,7 @@ struct Config {
   char      group[16] = "239.255.42.11";
   uint16_t  port = 9772;
   uint16_t  staleMs = 1200;        // companion silent => pure audio fallback
+  bool      demo = false;          // run the built-in demo script (TestInjector)
 };
 
 inline void clampConfig(Config& c) {

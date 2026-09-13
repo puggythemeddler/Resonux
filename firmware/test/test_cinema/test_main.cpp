@@ -11,6 +11,7 @@
 #include "cinema/SceneMemory.h"
 #include "cinema/SpatialBlock.h"
 #include "cinema/SpatialWaveField.h"
+#include "cinema/TestInjector.h"
 
 using namespace cine;
 using namespace sceneframe;
@@ -1315,6 +1316,79 @@ void test_link_latency_and_jitter_estimated() {
   TEST_ASSERT_INT_WITHIN(3, 0, eng.status().jitterMs);
 }
 
+// ---------------------------------------------------------------------
+// TestInjector — synthetic SceneFrame source (spec: test/demo mode)
+
+void test_injector_runs_entries_and_stops() {
+  cine::TestEntry a, b;
+  a.lengthMs = 100;
+  a.scene = SCENE_EXPLOSION;
+  a.event = SEVENT_BOOM;
+  b.lengthMs = 200;
+  b.scene = SCENE_SPEECH;
+  b.event = SEVENT_NONE;
+  cine::TestEntry script[2] = {a, b};
+  cine::TestInjector inj;
+  inj.start(script, 2, false, 1000);
+
+  Frame f;
+  SpatialInfo sp;
+  bool hs = false;
+  TEST_ASSERT_TRUE(inj.step(1050, f, sp, hs));
+  TEST_ASSERT_EQUAL_UINT8(SCENE_EXPLOSION, f.sceneId);
+  TEST_ASSERT_EQUAL_UINT8(SEVENT_BOOM, f.eventId);
+
+  TEST_ASSERT_TRUE(inj.step(1110, f, sp, hs));
+  TEST_ASSERT_EQUAL_UINT8(SCENE_SPEECH, f.sceneId);
+
+  // cumulative dwell (300 ms) spent => non-looping run deactivates
+  TEST_ASSERT_FALSE(inj.step(1500, f, sp, hs));
+  TEST_ASSERT_FALSE(inj.active());
+}
+
+void test_injector_loops_and_seq_monotonic() {
+  cine::TestEntry e;
+  e.lengthMs = 0;  // zero-dwell entry covers the whole (0-length) loop
+  e.scene = SCENE_MUSIC;
+  cine::TestInjector inj;
+  inj.start(&e, 1, true, 0);
+  Frame f;
+  SpatialInfo sp;
+  bool hs = false;
+  uint32_t prev = 0;
+  bool first = true;
+  for (uint32_t t = 16; t <= 1000; t += 16) {
+    TEST_ASSERT_TRUE(inj.step(t, f, sp, hs));
+    if (!first) TEST_ASSERT(f.seq > prev);
+    first = false;
+    prev = f.seq;
+  }
+  TEST_ASSERT_TRUE(inj.active());
+  TEST_ASSERT_EQUAL_UINT8(SCENE_MUSIC, f.sceneId);
+}
+
+void test_injector_spatial_sample() {
+  cine::TestEntry e;
+  e.lengthMs = 500;
+  e.focusX = 40;
+  e.focusY = 128;
+  cine::TestInjector inj;
+  inj.start(&e, 1, false, 100);
+  Frame f;
+  SpatialInfo sp;
+  bool hs = false;
+  TEST_ASSERT_TRUE(inj.step(200, f, sp, hs));
+  TEST_ASSERT_TRUE(hs);
+  TEST_ASSERT_EQUAL_UINT8(40u, sp.focusX);
+  TEST_ASSERT_EQUAL_UINT8(128u, sp.focusY);
+
+  e.focusX = -1;
+  e.focusY = -1;
+  inj.start(&e, 1, false, 100);
+  TEST_ASSERT_TRUE(inj.step(200, f, sp, hs));
+  TEST_ASSERT_FALSE(hs);
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------- main
@@ -1379,5 +1453,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_comfort_film_dims_flash_and_brightness);
   RUN_TEST(test_comfort_film_extends_flash_interval);
   RUN_TEST(test_link_latency_and_jitter_estimated);
+  RUN_TEST(test_injector_runs_entries_and_stops);
+  RUN_TEST(test_injector_loops_and_seq_monotonic);
+  RUN_TEST(test_injector_spatial_sample);
   return UNITY_END();
 }
