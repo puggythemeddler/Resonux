@@ -69,6 +69,12 @@ and upload; no firmware edit needed.
 - **Now** — active theme label, 8 spectrum bars, beat flash indicator.
 - **Themes** — one row per theme; tap to select (text-only, no images — stays
   small). Uses the same `ThemeEngine` global selection as the web.
+- **Cine** — Cinematic Mode on/off, reaction-preset cycle, live status
+  (feed/source + link latency, scene/event/confidence, mood, loudness —
+  sync-offset/comfort tail), plus a **QA burst** button that cycles
+  flash/boom/cut/whisper/music bursts and fires a real synthetic frame into the
+  engine (wave-carrying where relevant), so the whole pipeline is verifiable
+  on-panel without a companion.
 - **System** — master LED brightness + screen backlight sliders, screen-timeout
   cycle button (Never / 30 s / 60 s / 2 min / 5 min / 10 min), a status line
   (Wi-Fi mode, system state, heap, uptime, Art-Net), and **Restart** /

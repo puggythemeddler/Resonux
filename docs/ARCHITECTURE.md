@@ -747,11 +747,14 @@ Full details: `docs/CINEMATIC.md`. Summary:
   audio analysis.
 - **Pure layer (`src/cinema/`, host-testable):** `SceneFrame.h` (packed codec)
   + `SpatialBlock.h` (optional spatial extension), `CinematicConfig.h`
-  (5 presets, 2 genre overlays, clamped knobs), `SceneAnalyzer.h`
+  (5 presets, 2 genre overlays, 4 comfort tiers, sync offset, clamped knobs),
+  `SceneAnalyzer.h`
   (boom/impact cooldowns, whisper/silence/dialogue/tension), `SceneMemory.h` +
   `CinematicDirector.h` (bounded scene memory → 8-mood intent), `CinematicEngine.h`
   (scene+event envelopes, video smoothing, `Look`, `SpatialWaveField` room
-  mapping), `CinematicApply.h` (multiplies the look onto the theme frame).
+  mapping, latency/jitter tracking), `CinematicApply.h` (multiplies the look
+  onto the theme frame), `CompanionPicker.h` (sticky multi-source identity),
+  `TestInjector.h` (synthetic frames for QA bursts + demo loop).
 - **Transport:** `SceneLinkNode` — receive-only UDP multicast task (core 0,
   mutex-guarded latest-frame copy, stale fallback). The ESP32 never transmits
   SceneFrames.
@@ -760,8 +763,10 @@ Full details: `docs/CINEMATIC.md`. Summary:
   is cooldown-gated (no strobe); a dead companion falls back to pure on-device
   audio within `staleMs`; the whole mode is off by default and costs nothing
   when disabled.
-- **Surfaces:** `GET/POST /api/cinematic`, a Cinematic web tab, and a compact
-  LVGL Cine screen — all driven by the same `Config`/`Status`.
+- **Surfaces:** `GET/POST /api/cinematic` + `POST /api/cinematic/test`, a
+  Cinematic web tab (incl. QA burst card + comfort/sync controls), and a
+  compact LVGL Cine screen (incl. QA burst button) — all driven by the same
+  `Config`/`Status`.
 
 ---
 
@@ -902,7 +907,7 @@ G:\LED project\
 │   │   ├── effects\            Effect|LedFrame|EffectParams|EffectRegistry|fx\…
 │   │   ├── config\             ConfigDefs|Config|ConfigStore|ConfigDefaults
 │   │   ├── network\            (Ph4) wifi, AP/STA, REST api, SSE stream
-│   │   ├── cinema\             SceneFrame codec, CinematicConfig, SceneAnalyzer, CinematicEngine, CinematicApply, SceneLinkNode (Phase 13)
+│   │   ├── cinema\             SceneFrame codec, CinematicConfig, SceneAnalyzer, CinematicEngine, CinematicApply, SceneLinkNode, CompanionPicker, TestInjector (Phase 13)
 │   │   ├── system\             (Ph4+) diag, memory/cpu, ota
 │   │   └── runtime\            StripRuntime, App, AudioFrame pub/sub
 │   ├── data\                   LittleFS: web assets + default config.json

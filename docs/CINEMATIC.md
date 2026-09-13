@@ -1,7 +1,7 @@
 # Cinematic Mode — Movie/TV Scene-Reactive Lighting
 
 Status: **implemented, builds green** (both firmware envs, web typecheck/build,
-128 host tests, 44 cinematic). Bench pending (hardware not yet arrived).
+144 host tests). Bench pending (hardware not yet arrived).
 
 ## Why
 
@@ -84,6 +84,29 @@ predate the spatial block simply ignore its trailing bytes. `SceneLinkNode`
 `tools/companion/resonux_companion.py` (pure stdlib codec, heavy deps loaded
 lazily) is the reference transmitter.
 
+### Companion source identity (`cinema/CompanionPicker.h`)
+
+The receiver keys frames by UDP source (ip:port) so competing companions don't
+fight the scene line. One **active** source owns the feed; up to **4** sources
+are tracked in total. Rules:
+
+- Sequence guard `(int32_t)(seq - lastSeq) > 0` drops replayed/out-of-order
+  frames; wrap-aware counts remain valid across the 32-bit boundary.
+- Live non-active sources are *tracked* (counted, last-rx updated) but their
+  frames return `REJECT_INACTIVE` — never committed while the active source is
+  streaming.
+- If the active source goes stale, the picker switches to the best alive
+  candidate (vote count desc → last-rx desc → ip asc → slot asc) and only then
+  commits that sender's frame; a stale sender that fires *now* re-arms instead.
+- A full table evicts the deterministic weakest **non-active** slot; the active
+  slot can never be evicted.
+- A smoothed **skew estimate** (ppm) is seeded on activation (~1 s) and updated
+  with the connection so the web panel can show how far a companion's clock
+  drifts.
+
+`sourceLabel()`, `sourceCount()`, `skewPpm()` and `lastRxMs()` are surfaced in
+`GET /api/cinematic` (see API).
+
 ### Spatial block (optional)
 
 A companion with per-pixel screen data appends a length-tagged **spatial block**
@@ -130,6 +153,33 @@ desaturated), boom dips, ambient floor from scene luminance, genre overlays.
 `+ flash*0.55`, sparkle `+ flash*0.25`, intensity `× (1-0.5·calm)`,
 transition speed `× (1-0.6·smoothing)`, tint on primary/accent/secondary/
 background by `tintMix·0.7/0.45/0.25`).
+
+### Comfort tiers
+
+A global comfort level scales the punchy stuff without touching the tuning
+sliders, so "Emotive" presets stay usable after dark:
+
+| Comfort | Flash ceiling | Gap multiplier | Brightness ceiling |
+|---|---|---|---|
+| **Film** | 0.5× | 2.2× | 0.72× |
+| **Standard** | 1.0× | 1.0× | 1.0× |
+| **Vivid** | 1.2× | 0.8× | 1.0× |
+| **Extreme** | 1.5× | 0.55× | 1.0× |
+
+`comfortFlashScale` scales the flash top, `comfortGapScale` lengthens/shortens
+the flash/boom cooldown gaps, `comfortBrightnessScale` caps `maxBrightness`.
+Cooldown tracking is hold-based with a `0xFFFFFFFF` sentinel ("never fired")
+so a freshly armed comfort switch can't produce instant strobes.
+
+### Audio/video sync offset & link latency
+
+`syncOffsetMs` (−2000..2000, default 0) shifts the *scheduled start* of every
+envelope: event starts are computed as `(int64_t)nowMs + syncOffsetMs`, so a
+positive value parks bursts until the video catches the audio that triggered
+them (and a negative value leads). The engine reports `status.linkLatencyMs`
+and `status.jitterMs` — the smoothed half of the host-arrival diff measured on
+the receiver (`est=(dl−dh)/2` while `0 ≤ dh ≤ dl`) — so the dashboard can show
+exactly how far the companion feed trails the wall clock.
 
 ## Scene memory & intent (bounded)
 
@@ -185,11 +235,32 @@ Immersive / Dynamic / Extreme — `applyPreset()` fills reaction, influences,
 speed, smoothing, flash intensity + timings while **preserving** the network
 fields (group/port/stale) so picking a preset never loses the companion port.
 Two genre overlays (Horror → dim + desaturate; Anime → brighten + pulse the
-dominant colour) sit on top of a mode. `clampConfig()` bounds every knob
+dominant colour) sit on top of a mode, and a **comfort tier** (`c.comfort`,
+Film/Standard/Vivid/Extreme) scales flash, gaps and brightness ceiling on top of
+both (see above). `clampConfig()` bounds every knob
 (NaN → low bound) so `POST /api/cinematic` can't write a harmful value
 (`reaction` to 1.5 by design — Extreme runs hot at 1.25). The room-mapping
 knobs above clamp the same way; strip `roomX/roomY` (0..1) live in the main
 `Config` and are persisted with it.
+
+## Test & demo mode (`cinema/TestInjector.h`)
+
+No companion in the room? The controller can drive the *whole* pipeline itself.
+`TestInjector` is a pure synthetic SceneFrame source: a scripted sequence of
+entries (scene/event/confidence/dominant colour/motion/wave focus) is packed
+into real `SceneFrame`s with a monotonic seq and a loopback `hostTimeMs` — the
+engine sees a perfectly fresh, zero-latency feed.
+
+- **QA bursts** (`POST /api/cinematic/test`, or the web Cinema tab's *QA test
+  burst* card, or the touchscreen Cine tab's *QA burst* button) inject one
+  entry for a set dwell (`lengthMs`, default 800 ms). The engine reverts to the
+  live feed / device audio the instant the burst is spent.
+- **Demo loop** (`cinema.demo` toggle): a built-in ~10.5 s 9-entry script
+  (action→flash→explosion boom→chase cut→…→speech) runs on loop so comfort,
+  sync offset and room-mapping waves can be eyeballed on any content. Real UDP
+  frames and one-shot bursts always take priority and the loop resumes after.
+- Apps and bursts are mutually safe: a burst never touches the persisted
+  config; the loop doesn't either — both are runtime-only.
 
 ## Failsafes
 
@@ -211,14 +282,16 @@ knobs above clamp the same way; strip `roomX/roomY` (0..1) live in the main
 
 | Method & path | Body | Effect |
 |---|---|---|
-| `GET /api/cinematic` | — | `{config, active, companionAlive, status{source, scene, event ids/labels, confidence, luminance, motion, progAudio, hue, sat, val, audioLevel, boom, tension, lastFrameMs}}` |
-| `POST /api/cinematic` | partial merge | Apply optional `{applyPreset:true, mode}` then merge scalar fields; live-applied through `App::setCinematicConfig` (engine reconfigured, `SceneLinkNode` recreated, flash save debounced ~500 ms after the last change — no reboot) |
+| `GET /api/cinematic` | — | `{config, active, companionAlive, companionSource{Label,Count,SkewPpm,LastRxMs}, demoActive, status{source, scene, event ids/labels, confidence, luminance, motion, progAudio, hue, sat, val, audioLevel, boom, tension, lastFrameMs, linkLatencyMs, jitterMs, mood, moodEnergy, recentEvents, spatialActive}}` |
+| `POST /api/cinematic` | partial merge | Apply optional `{applyPreset:true, mode}` then merge scalar fields (`comfort`, `syncOffsetMs`, `demo` included); live-applied through `App::setCinematicConfig` (engine reconfigured, `SceneLinkNode` recreated, flash save debounced ~500 ms after the last change — no reboot) |
+| `POST /api/cinematic/test` | `{scene, event, confidence, lengthMs, focusX, focusY}` | One-shot QA burst — a synthetic SceneFrame injected for `lengthMs`, then the engine reverts to the live feed / device audio |
 
-Web **Cinematic** tab (toggle, presets, genre, sliders, companion link,
-live status) and the LVGL **Cine** screen (toggle + preset cycle + status)
-share the same `Config`/`Status` source of truth. Companion status, presets and
-knobs all round-trip live without a reboot; debounced saves batch rapid slider
-drag batched into one flash write.
+Web **Cinematic** tab (toggle, presets, genre, comfort, sync offset, demo loop,
+sliders, companion link, live status + latency, QA burst) and the LVGL **Cine**
+screen (toggle + preset cycle + QA burst + status) share the same
+`Config`/`Status` source of truth. Companion status, presets and knobs all
+round-trip live without a reboot; debounced saves batch rapid slider drags into
+one flash write.
 
 ## Safety / honesty notes
 
