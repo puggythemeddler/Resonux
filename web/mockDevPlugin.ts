@@ -302,12 +302,13 @@ export default function mockDevPlugin(): Plugin {
     // extreme
     { reaction: 1.25, visualInfluence: 0.9, audioInfluence: 1, colorInfluence: 1.3, speed: 1, flashIntensity: 1, whisperDim: 0.9, smoothing: 0.25, flashDurationMs: 240, flashMinGapMs: 60, boomCooldownMs: 320 },
   ]
-  const CINE_MODE_LABELS = ['Subtle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
+  const CINE_MODE_LABELS = ['Gentle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
   const CINE_MODE_IDENTS = ['subtle', 'balanced', 'immersive', 'dynamic', 'extreme']
   const CINE_GENRES = [
     { id: 'none', label: 'None', value: 0 },
     { id: 'horror', label: 'Horror', value: 1 },
     { id: 'anime', label: 'Anime', value: 2 },
+    { id: 'auto', label: 'Automatic', value: 3 },
   ]
   const CINE_SCENES = [
     { key: 'speech', label: 'Speech' }, { key: 'quiet', label: 'Quiet' },
@@ -922,6 +923,11 @@ export default function mockDevPlugin(): Plugin {
                 boom: Math.random() < 0.12 ? 0.8 + Math.random() * 0.2 : 0,
                 tension: Math.random() * 0.4,
                 lastFrameMs: 30 + Math.floor(Math.random() * 60),
+                mood: Math.floor(Math.random() * 8),
+                moodId: ['calm', 'suspense', 'tension', 'action', 'impact', 'aftermath', 'transition', 'performance'][Math.floor(Math.random() * 8)],
+                moodLabel: ['Calm', 'Suspense', 'Tension', 'Action', 'Impact', 'Aftermath', 'Transition', 'Performance'][Math.floor(Math.random() * 8)],
+                moodEnergy: Math.round((0.2 + Math.random() * 0.7) * 100) / 100,
+                recentEvents: Math.floor(Math.random() * 5),
               },
             })
             return

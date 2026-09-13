@@ -199,6 +199,11 @@ type CinematicStatus = {
   boom: number
   tension: number
   lastFrameMs: number
+  mood: number
+  moodId: string
+  moodLabel: string
+  moodEnergy: number
+  recentEvents: number
 }
 
 type CinematicData = {
@@ -386,11 +391,19 @@ const CINE_PRESETS: Array<Partial<CinematicConfig>> = [
   { reaction: 1, visualInfluence: 0.8, audioInfluence: 0.85, colorInfluence: 1.2, speed: 0.85, flashIntensity: 0.9, whisperDim: 0.8, smoothing: 0.3, flashDurationMs: 200, flashMinGapMs: 80, boomCooldownMs: 400 },
   { reaction: 1.25, visualInfluence: 0.9, audioInfluence: 1, colorInfluence: 1.3, speed: 1, flashIntensity: 1, whisperDim: 0.9, smoothing: 0.25, flashDurationMs: 240, flashMinGapMs: 60, boomCooldownMs: 320 },
 ]
-const CINE_MODE_LABELS = ['Subtle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
+const CINE_MODE_LABELS = ['Gentle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
+const CINE_MODE_DESCRIPTIONS = [
+  'Soft, low-key lighting for quiet nights and dialogue.',
+  'Balanced across dialogue, action and music.',
+  'Stronger motion, colour and beats for films and series.',
+  'Big flash/pulse response tuned for gaming.',
+  'Maximum flash, pulse and motion — brightest, most reactive.',
+]
 const CINE_GENRES = [
-  { label: 'None', value: 0 },
-  { label: 'Horror', value: 1 },
-  { label: 'Anime', value: 2 },
+  { label: 'None', value: 0, hint: 'No genre tuning' },
+  { label: 'Horror', value: 1, hint: 'Tension-heavy, muted flashes, cold tones' },
+  { label: 'Anime', value: 2, hint: 'Snappy, bright, warm action' },
+  { label: 'Automatic', value: 3, hint: 'Director derives the feel from the content' },
 ]
 
 function CinematicPanel({ data, err, onPatch, onReload }: {
@@ -472,6 +485,9 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
             </button>
           ))}
         </div>
+        <p className="muted" style={{ marginTop: 6 }}>
+          {CINE_MODE_DESCRIPTIONS[c.mode] ?? ''}
+        </p>
         <div className="row" style={{ marginTop: 8 }}>
           <label>Genre overlay</label>
           <select value={c.genre} onChange={(e) => setField('genre', Number(e.target.value))}>
@@ -480,6 +496,9 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
             ))}
           </select>
         </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          {(CINE_GENRES.find((g) => g.value === c.genre)?.hint ?? '')}
+        </p>
 
         <h4 style={{ marginTop: 12 }}>Reaction tuning</h4>
         {fields.map((f) => (
@@ -517,10 +536,16 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
           <div className="stat"><div className="val">{(s.audioLevel ?? 0).toFixed(2)}</div><div className="lbl">Amp</div></div>
         </div>
         <div className="stat-row">
+          <div className="stat"><div className="val">{s.moodLabel ?? '—'}</div><div className="lbl">Mood</div></div>
+          <div className="stat"><div className="val">{(s.moodEnergy ?? 0).toFixed(2)}</div><div className="lbl">Mood energy</div></div>
+          <div className="stat"><div className="val">{s.recentEvents ?? 0}</div><div className="lbl">Events (3s)</div></div>
           <div className="stat"><div className="val">{(s.boom ?? 0).toFixed(2)}</div><div className="lbl">Boom</div></div>
+        </div>
+        <div className="stat-row">
           <div className="stat"><div className="val">{(s.tension ?? 0).toFixed(2)}</div><div className="lbl">Tension</div></div>
           <div className="stat"><div className="val">{s.hue}</div><div className="lbl">Dominant hue</div></div>
           <div className="stat"><div className="val">{s.sat}</div><div className="lbl">Sat</div></div>
+          <div className="stat"><div className="val">{s.val}</div><div className="lbl">Val</div></div>
         </div>
         <p className="muted">
           Boom/flash envelopes are cooldown-gated so loud music can never strobe; if the companion goes

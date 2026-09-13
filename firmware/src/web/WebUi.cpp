@@ -771,6 +771,13 @@ void WebUi::sendCinematic() {
   st["boom"] = s.boom;
   st["tension"] = s.tension;
   st["lastFrameMs"] = s.lastFrameMs;
+  st["mood"] = _app->cinematicActive() ? (int)s.mood : -1;
+  st["moodId"] =
+      _app->cinematicActive() ? cine::moodIdent(s.mood) : "off";
+  st["moodLabel"] =
+      _app->cinematicActive() ? cine::moodLabel(s.mood) : "Off";
+  st["moodEnergy"] = s.moodEnergy;
+  st["recentEvents"] = s.recentEvents;
 
   String out;
   serializeJson(doc, out);

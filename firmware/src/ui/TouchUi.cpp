@@ -578,14 +578,16 @@ void TouchUi::render() {
       char buf[256];
       snprintf(buf, sizeof(buf),
                "feed: %s\nscene %s / %s (conf %d%%)\n"
+               "mood %s · energy %.2f · ev %d (3s)\n"
                "lum %d · motion %d · prog-audio %d\n"
                "amp %.2f · boom %.2f · tension %.2f",
                App::instance().cameraUdpLive() ? "companion"
                                                 : "device audio only",
                sceneframe::sceneLabel(s.scene), sceneframe::eventLabel(s.event),
-               (int)s.eventConfidence, (int)s.luminance, (int)s.motion,
-               s.progAudio ? 1 : 0, (double)s.audioLevel, (double)s.boom,
-               (double)s.tension);
+               (int)s.eventConfidence, cine::moodLabel(s.mood),
+               (double)s.moodEnergy, (int)s.recentEvents, (int)s.luminance,
+               (int)s.motion, s.progAudio ? 1 : 0, (double)s.audioLevel,
+               (double)s.boom, (double)s.tension);
       lv_label_set_text(I.cineStatus, buf);
     }
   }
