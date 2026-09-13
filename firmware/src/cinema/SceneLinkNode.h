@@ -1,5 +1,6 @@
 #pragma once
 #include "cinema/CinematicConfig.h"
+#include "cinema/CompanionPicker.h"
 #include "cinema/SceneFrame.h"
 #include "cinema/SpatialBlock.h"
 #include <WiFiUdp.h>
@@ -11,6 +12,10 @@
 // Cinematic companion receiver (spec §28). Listens on the SceneFrame multicast
 // group and hands the freshest decoded frame to the LED task through a
 // mutex-guarded copy. Receive-only by design — the ESP32 never emits SceneFrames.
+//
+// Source identity: a CompanionPicker keys each datagram by UDP src ip:port, so
+// frames from a live-but-not-selected companion are tracked but never stored,
+// and the active source only switches after it goes stale (CompanionPicker.h).
 //
 // Failsafe: the LED task checks `live(staleMs)`; if the companion goes quiet the
 // engine falls back to pure on-device audio, so a dead companion can never
@@ -35,6 +40,19 @@ public:
   uint32_t lastRxMs() const { return _lastRxMs; }
   uint32_t seq() const { return _seq; }
 
+  // ---- source identity (CompanionPicker status for the web/UI) -------------
+  const cine::CompanionPicker& picker() const { return _picker; }
+  // Last accepted source, formatted "a.b.c.d:port" (false when idle).
+  bool sourceLabel(char* out, size_t cap) const;
+  uint32_t lastSourceIp() const {
+    const cine::SourceInfo* a = _picker.active();
+    return a ? a->key.ip : 0;
+  }
+  uint16_t lastSourcePort() const {
+    const cine::SourceInfo* a = _picker.active();
+    return a ? a->key.port : 0;
+  }
+
 private:
   void taskLoop();
   static void taskEntry(void* arg);
@@ -54,6 +72,7 @@ private:
   bool _have = false;
   uint32_t _seq = 0;
   uint32_t _lastRxMs = 0;
+  cine::CompanionPicker _picker;
 
   uint8_t _rxBuf[sizeof(sceneframe::Frame) + sceneframe::kSpatialMaxBlock];
 

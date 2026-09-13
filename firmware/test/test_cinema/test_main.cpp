@@ -2,6 +2,7 @@
 
 #include "audio/AudioFrame.h"
 #include "cinema/CinematicApply.h"
+#include "cinema/CompanionPicker.h"
 #include "cinema/CinematicConfig.h"
 #include "cinema/CinematicDirector.h"
 #include "cinema/CinematicEngine.h"
@@ -997,6 +998,181 @@ void test_engine_change_spawns_directional_sweep() {
   TEST_ASSERT(east > westFar);
 }
 
+// ---------------------------------------------------------------------
+// CompanionPicker — multi-source identity (spec: source-identity hardening)
+
+cine::SourceKey skey(uint32_t ip, uint16_t port) {
+  cine::SourceKey k;
+  k.ip = ip;
+  k.port = port;
+  return k;
+}
+
+void test_picker_single_source_accepted() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(0x0A000001, 9772);  // 10.0.0.1
+
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT,
+                        p.accept(a, 1, 1000, 1000));
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT,
+                        p.accept(a, 2, 1016, 1016));
+  TEST_ASSERT_EQUAL_INT(0, p.activeIndex());
+  TEST_ASSERT_EQUAL_INT(1, p.sourceCount());
+  TEST_ASSERT_NOT_NULL(p.active());
+  TEST_ASSERT_TRUE(p.active()->active);
+  TEST_ASSERT_EQUAL_INT32(2, (int32_t)p.active()->validCount);
+  TEST_ASSERT_EQUAL_UINT(1016, p.lastRxMs());
+}
+
+void test_picker_replay_and_out_of_order_rejected() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(2, 9772);
+
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(a, 10, 1000, 1000));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_REPLAY, p.accept(a, 10, 1016, 1016));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_REPLAY, p.accept(a, 9, 1032, 1032));
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(a, 11, 1048, 1048));
+  TEST_ASSERT_EQUAL_INT32(2, (int32_t)p.active()->validCount);
+
+  // seq wrap across 2^32 is a legal forward step on a rolling counter
+  cine::CompanionPicker w;
+  w.configure(1200);
+  const cine::SourceKey wsrc = skey(2, 9772);
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT,
+                        w.accept(wsrc, 0xFFFFFFF0u, 2000, 2000));
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT,
+                        w.accept(wsrc, 2, 2016, 2016));
+  // ...but a backward step out of the wrap is still rejected
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_REPLAY,
+                        w.accept(wsrc, 0xFFFFFFFFu, 2032, 2032));
+  TEST_ASSERT_EQUAL_INT32(2, (int32_t)w.active()->validCount);
+}
+
+void test_picker_second_source_ignored_while_current_live() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(3, 9772);
+  const cine::SourceKey b = skey(4, 9772);
+
+  p.accept(a, 1, 1000, 1000);
+  p.accept(a, 2, 1016, 1016);
+  // B shows up mid-scene: tracked but never committed while A is live
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 1, 1100, 1100));
+  TEST_ASSERT_EQUAL_INT(0, p.activeIndex());
+  TEST_ASSERT_TRUE(p.active()->active);
+  TEST_ASSERT_EQUAL_INT(2, p.sourceCount());
+  TEST_ASSERT_EQUAL_INT32(2, (int32_t)(p.active()->validCount));
+  // B's own ordering is still enforced (its seq 1 was already consumed)
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_REPLAY, p.accept(b, 1, 1116, 1116));
+}
+
+void test_picker_switch_after_current_stale() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(5, 9772);
+  const cine::SourceKey b = skey(6, 9772);
+
+  p.accept(a, 1, 1000, 1000);   // active = A
+  // A goes quiet; at t=3000 it is long stale (diff 2000 >= 1200)
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(b, 1, 3000, 3000));
+  const cine::SourceInfo* act = p.active();
+  TEST_ASSERT_NOT_NULL(act);
+  TEST_ASSERT_TRUE(cine::sameKey(act->key, b));  // B now drives the engine
+}
+
+void test_picker_tie_break_votes_beat_recency() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(7, 9772);
+  const cine::SourceKey b = skey(8, 9772);
+  const cine::SourceKey c = skey(9, 9772);
+
+  // A active and live until t=2216 (lastRx 1016 + stale 1200)
+  p.accept(a, 1, 1000, 1000);
+  p.accept(a, 2, 1016, 1016);
+  // B bursts while A is live: tracked (REJECT_INACTIVE), kept, counted
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 1, 1500, 1500));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 2, 1516, 1516));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 3, 1532, 1532));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 1, 2000, 2000));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 2, 2016, 2016));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 3, 2032, 2032));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 4, 2048, 2048));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 5, 2064, 2064));
+
+  // A stale at t=3000. B is the sender (fresh) but C has more votes (5 vs 4)
+  // and is still alive (2064 -> diff 936 < 1200): preference picks C.
+  TEST_ASSERT_EQUAL_INT32((int32_t)3, (int32_t)p.info(p.indexOf(b))->validCount);
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 4, 3000, 3000));
+  TEST_ASSERT_EQUAL_INT32((int32_t)5, (int32_t)p.info(p.indexOf(c))->validCount);
+  TEST_ASSERT_TRUE(cine::sameKey(p.active()->key, c));
+}
+
+void test_picker_table_full_eviction() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(11, 9772);
+  const cine::SourceKey b = skey(12, 9772);
+  const cine::SourceKey c = skey(13, 9772);
+  const cine::SourceKey d = skey(14, 9772);
+  const cine::SourceKey e = skey(15, 9772);
+
+  p.accept(a, 1, 1000, 1000);
+  p.accept(a, 2, 1016, 1016);
+  p.accept(a, 3, 1032, 1032);
+  p.accept(a, 4, 1048, 1048);  // active A, 4 votes, live until 2248
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(b, 1, 1500, 1500));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 1, 1600, 1600));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 2, 1616, 1616));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(c, 3, 1632, 1632));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(d, 1, 1700, 1700));
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(d, 2, 1716, 1716));
+  TEST_ASSERT_EQUAL_INT(4, p.sourceCount());
+
+  // 5th source while A still live (2000-1048=952 < 1200): B is the
+  // least-deserving non-active keeper (1 vote, oldest) and gets evicted.
+  TEST_ASSERT_EQUAL_INT(cine::REJECT_INACTIVE, p.accept(e, 1, 2000, 2000));
+  TEST_ASSERT_EQUAL_INT(4, p.sourceCount());
+  TEST_ASSERT_EQUAL_INT(-1, p.indexOf(b));
+  TEST_ASSERT(p.indexOf(e) >= 0);
+  TEST_ASSERT_TRUE(cine::sameKey(p.active()->key, a));   // A never evicted
+}
+
+void test_picker_skew_estimate() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(21, 9772);
+
+  p.accept(a, 1, 1000, 1000);   // seed
+  p.accept(a, 2, 1002, 1500);   // <1000 ms elapsed: baseline not ready
+  TEST_ASSERT_EQUAL_INT32(0, p.skewPpm());
+  p.accept(a, 3, 2005, 2000);   // host gained +5 ms over 1000 local => +5000 ppm
+  TEST_ASSERT_INT_WITHIN(100, 5000, p.skewPpm());
+  p.accept(a, 4, 3010, 3000);   // same rate, smoothed stays ~+5000
+  TEST_ASSERT_INT_WITHIN(200, 5000, p.skewPpm());
+}
+
+void test_picker_switch_back_recovery() {
+  cine::CompanionPicker p;
+  p.configure(1200);
+  const cine::SourceKey a = skey(31, 9772);
+  const cine::SourceKey b = skey(32, 9772);
+
+  p.accept(a, 1, 1000, 1000);
+  p.accept(a, 2, 1016, 1016);
+  // B takes over after A dies, drives a while, then dies too
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(b, 1, 3000, 3000));
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(b, 2, 3016, 3016));
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(b, 3, 3032, 3032));
+  TEST_ASSERT_TRUE(cine::sameKey(p.active()->key, b));
+  // A returns with its counter continuing: alive and best => back to A
+  TEST_ASSERT_EQUAL_INT(cine::ACCEPT_COMMIT, p.accept(a, 3, 5000, 5000));
+  TEST_ASSERT_TRUE(cine::sameKey(p.active()->key, a));
+  TEST_ASSERT_EQUAL_INT32(3, (int32_t)p.info(p.indexOf(a))->validCount);
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------- main
@@ -1048,5 +1224,13 @@ int main(int argc, char** argv) {
   RUN_TEST(test_apply_zone_scale_default_is_identity);
   RUN_TEST(test_engine_spawns_wave_on_boom_only_when_mapping);
   RUN_TEST(test_engine_change_spawns_directional_sweep);
+  RUN_TEST(test_picker_single_source_accepted);
+  RUN_TEST(test_picker_replay_and_out_of_order_rejected);
+  RUN_TEST(test_picker_second_source_ignored_while_current_live);
+  RUN_TEST(test_picker_switch_after_current_stale);
+  RUN_TEST(test_picker_tie_break_votes_beat_recency);
+  RUN_TEST(test_picker_table_full_eviction);
+  RUN_TEST(test_picker_skew_estimate);
+  RUN_TEST(test_picker_switch_back_recovery);
   return UNITY_END();
 }
