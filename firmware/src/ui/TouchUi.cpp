@@ -57,6 +57,7 @@ struct TouchUi::Impl {
   lv_obj_t* cineToggle = nullptr;  // Cinematic tab on/off
   lv_obj_t* cineMode = nullptr;    // preset cycle button
   lv_obj_t* cineStatus = nullptr;  // live status readout
+  lv_obj_t* cineTest = nullptr;    // one-shot QA burst button
   AudioFrame frame;
   uint32_t lastTick = 0;
 };
@@ -206,6 +207,42 @@ static void cinePresetCb(lv_event_t*) {
   cine::applyPreset(c, next);
   c.enabled = true;  // picking a preset arms cinematic mode
   App::instance().setCinematicConfig(c);
+}
+
+// QA bursts for the touchscreen — cycle through these with successive taps,
+// then fire. The engine reverts to the live feed / device audio immediately
+// once the burst is spent.
+struct CineBurstPreset {
+  const char* name;
+  sceneframe::SceneKind scene;
+  sceneframe::SceneEvent ev;
+  uint8_t conf;
+  uint8_t fx;  // 255 => no spatial sample
+  uint8_t fy;
+  uint32_t dwellMs;
+};
+static const CineBurstPreset kCineBursts[] = {
+  {"flash",  sceneframe::SCENE_ACTION,    sceneframe::SEVENT_FLASH,  70, 255, 255, 400},
+  {"boom",   sceneframe::SCENE_EXPLOSION, sceneframe::SEVENT_BOOM,   82,  60, 120, 900},
+  {"cut",    sceneframe::SCENE_CHASE,     sceneframe::SEVENT_CHANGE, 55, 200,  40, 600},
+  {"whisper",sceneframe::SCENE_ACTION,    sceneframe::SEVENT_WHISPER,50, 255, 255, 800},
+  {"music",  sceneframe::SCENE_MUSIC,     sceneframe::SEVENT_NONE,   40, 255, 255, 700},
+};
+static uint8_t gCineBurstIdx = 0;
+
+static void cineTestCb(lv_event_t*) {
+  const CineBurstPreset& p = kCineBursts[gCineBurstIdx % (sizeof(kCineBursts) / sizeof(kCineBursts[0]))];
+  cine::TestEntry e;
+  e.scene = p.scene;
+  e.event = p.ev;
+  e.conf = p.conf;
+  e.lum = 200;
+  e.motion = 140;
+  e.lengthMs = p.dwellMs;
+  if (p.fx != 255) e.focusX = p.fx;
+  if (p.fy != 255) e.focusY = p.fy;
+  App::instance().triggerCinematicTest(e);
+  gCineBurstIdx++;
 }
 
 static lv_obj_t* makeTab(lv_obj_t* tv, const char* title) {
@@ -469,6 +506,15 @@ void TouchUi::begin(DisplayManager& mgr) {
   lv_label_set_long_mode(_impl->cineStatus, LV_LABEL_LONG_WRAP);
   lv_obj_set_style_text_color(_impl->cineStatus, lv_color_hex(0x22D3EE), 0);
   lv_obj_set_style_text_font(_impl->cineStatus, &lv_font_montserrat_14, 0);
+
+  _impl->cineTest = lv_btn_create(tabCine);
+  lv_obj_set_width(_impl->cineTest, LV_PCT(100));
+  lv_obj_set_height(_impl->cineTest, 44);
+  lv_obj_set_style_bg_color(_impl->cineTest, lv_color_hex(0x0F766E), 0);
+  lv_obj_add_event_cb(_impl->cineTest, cineTestCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cbLbl = lv_label_create(_impl->cineTest);
+  lv_label_set_text(cbLbl, "QA burst  (tap to cycle: flash→boom→cut→…)");
+  lv_obj_center(cbLbl);
 }
 
 void TouchUi::tick(uint32_t nowMs) {
@@ -567,6 +613,16 @@ void TouchUi::render() {
       lv_label_set_text(lbl, buf);
     }
   }
+if (I.cineTest) {
+    lv_obj_t* lbl = (lv_obj_t*)lv_obj_get_child(I.cineTest, 0);
+    if (lbl) {
+      const CineBurstPreset& p =
+          kCineBursts[gCineBurstIdx % (sizeof(kCineBursts) / sizeof(kCineBursts[0]))];
+      char buf[64];
+      snprintf(buf, sizeof(buf), "QA burst: %s  (tap to cycle)", p.name);
+      lv_label_set_text(lbl, buf);
+    }
+  }
   if (I.cineStatus) {
     if (!App::instance().cinematicActive()) {
       lv_label_set_text(
@@ -575,19 +631,32 @@ void TouchUi::render() {
           "movies and TV via the companion app.");
     } else {
       const cine::Status& s = App::instance().cinematicStatus();
-      char buf[256];
+      char src[24];
+      bool srcLabel = App::instance().companionSourceLabel(src, sizeof(src));
+      char tail[96];
+      if (App::instance().cinematicTestActive()) {
+        snprintf(tail, sizeof(tail), "burst/demo running");
+      } else if (cc.genre != cine::GENRE_NONE) {
+        snprintf(tail, sizeof(tail), "genre overlay");
+      } else {
+        snprintf(tail, sizeof(tail), "sync-offset %d ms · %s",
+                 (int)cc.syncOffsetMs, cine::comfortLabel(cc.comfort));
+      }
+      char buf[288];
       snprintf(buf, sizeof(buf),
-               "feed: %s\nscene %s / %s (conf %d%%)\n"
+               "feed: %s\n"
+               "scene %s / %s (conf %d%%)\n"
                "mood %s · energy %.2f · ev %d (3s)\n"
-               "lum %d · motion %d · prog-audio %d\n"
-               "amp %.2f · boom %.2f · tension %.2f",
+               "%s%s · latency %d±%d ms\n"
+               "lum %d · motion %d · amp %.2f\n%s",
                App::instance().cameraUdpLive() ? "companion"
-                                                : "device audio only",
+                                               : "device audio only",
                sceneframe::sceneLabel(s.scene), sceneframe::eventLabel(s.event),
                (int)s.eventConfidence, cine::moodLabel(s.mood),
-               (double)s.moodEnergy, (int)s.recentEvents, (int)s.luminance,
-               (int)s.motion, s.progAudio ? 1 : 0, (double)s.audioLevel,
-               (double)s.boom, (double)s.tension);
+               (double)s.moodEnergy, (int)s.recentEvents,
+               srcLabel ? "src " : "", srcLabel ? src : "",
+               (int)s.linkLatencyMs, (int)s.jitterMs, (int)s.luminance,
+               (int)s.motion, (double)s.audioLevel, tail);
       lv_label_set_text(I.cineStatus, buf);
     }
   }
