@@ -1,7 +1,7 @@
 # Cinematic Mode — Movie/TV Scene-Reactive Lighting
 
 Status: **implemented, builds green** (both firmware envs, web typecheck/build,
-105 host tests). Bench pending (hardware not yet arrived).
+128 host tests, 44 cinematic). Bench pending (hardware not yet arrived).
 
 ## Why
 
@@ -33,17 +33,17 @@ Everything is built to fail safe: companion silent → pure on-device audio afte
  program audio ─► HostAudio     SceneLinkNode ◄─ UDP 239.255.42.11:9772
  screen region ─► HostVideo     ──► exposeCameraFeed (mutex copy)
         │ pack_frame()                │
-        ▼                            ▼ stale>staleMs → drop
- SceneFrame (30 B) ──────► CinematicEngine.update(audioFeatures, scene?)
-                                   │ audio features ◄─ SceneAnalyzer (on-device)
-                                   ▼
-                              Look {brightness, hueShift, flash, ...}
-                                   │
-                                   ▼
-                          applyToThemeFrame() × every strip
-                                   │
-                                   ▼
-                          ThemeEngine → Effects → LEDDriver   (existing path)
+        ▼                             ▼  stale>staleMs → drop
+ SceneFrame (28 B) ────────► CinematicEngine.update(audioFeatures, scene?)
+        └─ optional spatial            │  audio features ◄─ SceneAnalyzer
+           block: focus +              ▼                   (on-device)
+           zone salience        Look {brightness, hueShift, flash, …}
+        (+≤21 B, drives the           │  (+ per-strip wave zoneScale,
+         room-mapping wave)           ▼   room mapping)
+                              applyToThemeFrame() × every strip
+                                     │
+                                     ▼
+                             ThemeEngine → Effects → LEDDriver   (existing path)
 ```
 
 The engine emits a *Look* that is merged with the theme frame by
@@ -59,12 +59,12 @@ can be tuned and host-tested independently.
 
 ## Wire protocol (`cinema/SceneFrame.h`)
 
-Packed 30-byte packet, little-endian, UDP multicast `239.255.42.11:9772`
+Packed 28-byte base packet, little-endian, UDP multicast `239.255.42.11:9772`
 (magic `0x53434E52` = 'RNCS', version 1):
 
 | Field | Bytes | Meaning |
 |---|---|---|
-| magic / version / flags | 4 / 2 / 2 | 'RNCS', 1, reserved |
+| magic / version / flags | 4 / 2 / 2 | 'RNCS', 1; bit 13 = spatial block follows |
 | seq | 4 | companion frame counter (dedupe) |
 | hostTimeMs | 4 | companion clock (rate/staleness probe) |
 | sceneId | 1 | SceneKind: undefined, speech, quiet, action, chase, explosion, music |
@@ -78,9 +78,32 @@ Packed 30-byte packet, little-endian, UDP multicast `239.255.42.11:9772`
 | pad | 2 | zero |
 
 `validFrame()` rejects short/corrupt payloads, wrong magic/version, or
-out-of-range ids. `SceneLinkNode` (receive-only, core 0 task, mutex-guarded
-latest-frame copy) is the ESP32 side; `tools/companion/resonux_companion.py`
-(pure stdlib codec, heavy deps loaded lazily) is the reference transmitter.
+out-of-range ids but **tolerates over-length payloads**, so receivers that
+predate the spatial block simply ignore its trailing bytes. `SceneLinkNode`
+(receive-only, core 0 task, mutex-guarded latest-frame copy) is the ESP32 side;
+`tools/companion/resonux_companion.py` (pure stdlib codec, heavy deps loaded
+lazily) is the reference transmitter.
+
+### Spatial block (optional)
+
+A companion with per-pixel screen data appends a length-tagged **spatial block**
+after the 28-byte base and sets bit 13 (`SFLAG_SPATIAL_BLOCK`) in `flags`.
+Layout (`cinema/SpatialBlock.h`):
+
+```
+'S' 'P' blockLen focusX focusY  (zoneId confidence) …
+```
+
+`blockLen` = `2 + 2·N` (N zone pairs, 2..18), so the whole block is at most
+`3 + 2 + 2·8 = 21` bytes. `focusX/focusY` (0..255, 128 = unknown) is the
+centre of visual mass on screen; each pair is a `ZoneId` + salience confidence
+(0..100). Zone ids: left / centre / right / top / bottom / the four corners /
+full-screen.
+
+The block is pure geometry — no pixels — so even a low-power receiver can
+steer a room-mapping wave without knowing the scene. A malformed block
+(bad magic, odd/oversized length, unknown zone) is rejected and the receiver
+keeps its last good spatial sample.
 
 ## On-device analysis (`cinema/SceneAnalyzer.h`)
 
@@ -108,6 +131,53 @@ desaturated), boom dips, ambient floor from scene luminance, genre overlays.
 transition speed `× (1-0.6·smoothing)`, tint on primary/accent/secondary/
 background by `tintMix·0.7/0.45/0.25`).
 
+## Scene memory & intent (bounded)
+
+The raw instantaneous feed is noisy (scene = speech for a sentence, then chase
+for a cut). A bounded **scene-memory ring** (`cinema/SceneMemory.h`) smooths it:
+per-kind agreement votes switch the running scene only after repeated
+consensus (hysteresis — except an explicit scene `change` event, which jumps
+the line), a smoothed **mood energy** 0..1 rises fast on events and decays
+slowly, and per-kind dwell/transition timers keep the whole thing stable during
+rapid cuts. The **director** (`cinema/CinematicDirector.h`) turns that memory
+into an 8-mood intent (calm → suspense → tension → action → impact → aftermath
+→ transition → performance) with a deterministic cascade, short hold timers to
+stop flicker (holds re-arm on actual change; impact punches through), and
+genre-aware tuning, producing `CinematicIntent {mood, energy, tintWarmth,
+flashScale, pulseDepth, …}` that the engine consumes. Moods have friendly
+labels surfaced in the web and touchscreen UIs.
+
+## Room mapping (spatial wave propagation)
+
+With the companion watching a screen region, the ESP32 can place light *where*
+the action is — without any per-zone geometry of its own. Knobs on
+`/api/cinematic` (`roomMapping` is off by default):
+
+| Knob | Default | Range | Meaning |
+|---|---|---|---|
+| roomMapping | off | bool | master switch (off ⇒ byte-for-byte legacy behavior) |
+| waveSpeed | 2.0 | 0.5–5 | screen-widths/sec a wave-front travels |
+| waveDecay | 0.8 | 0.1–2 | how fast a passing wave fades |
+| waveWidth | 0.7 | 0.1–1 | wave bell width (screen-relative) |
+| maxWaves | 8 | 4–12 | bounded wave ring depth |
+
+Each strip also gains `roomX`/`roomY` (0..1, screen coordinates, in
+Configuration). When mapping is on, the engine spawns a wave at the current
+spatial focus on impactful events — cooldown-gated booms/flashes (point wave),
+scene **changes** as a directional sweep from the previous focus, motion
+**chases** re-spawning every ~400 ms, and local-audio booms at the last known
+focus (screen centre when none) — and per strip computes
+
+```
+zoneScale = 0.70 + 0.30 × SpatialWaveField.intensityAt(roomX, roomY, now)
+```
+
+multiplied onto that strip's theme brightness. The wave field is a bounded ring
+of point/line waves in pure `SpatialWaveField.h` — old waves evicted, rest ⇒ 0,
+intensity clamped, so a dead or frozen feed yields zero zone energy and the
+lights simply rest on the ambient floor (never stutter). `status.spatialActive`
+tells the UI whether mapping has a live spatial feed.
+
 ## Presets & config
 
 Five reaction presets (`cine::Mode`): Subtle / **Balanced (default)** /
@@ -117,7 +187,9 @@ fields (group/port/stale) so picking a preset never loses the companion port.
 Two genre overlays (Horror → dim + desaturate; Anime → brighten + pulse the
 dominant colour) sit on top of a mode. `clampConfig()` bounds every knob
 (NaN → low bound) so `POST /api/cinematic` can't write a harmful value
-(`reaction` to 1.5 by design — Extreme runs hot at 1.25).
+(`reaction` to 1.5 by design — Extreme runs hot at 1.25). The room-mapping
+knobs above clamp the same way; strip `roomX/roomY` (0..1) live in the main
+`Config` and are persisted with it.
 
 ## Failsafes
 
@@ -130,18 +202,23 @@ dominant colour) sit on top of a mode. `clampConfig()` bounds every knob
 4. Everything the engine emits is *multiplied* onto the theme frame and capped
    by `maxBrightness` and the theme's own brightness — a black screen or dead
    companion can never command full white.
+5. Spatial safety: a malformed spatial block is dropped (last good sample
+   kept); a frozen screen yields zero-confidence zones so room mapping rests on
+   the ambient floor instead of strobing; and the whole mapping is opt-in
+   (`roomMapping` off = previous behavior exactly).
 
 ## API
 
 | Method & path | Body | Effect |
 |---|---|---|
 | `GET /api/cinematic` | — | `{config, active, companionAlive, status{source, scene, event ids/labels, confidence, luminance, motion, progAudio, hue, sat, val, audioLevel, boom, tension, lastFrameMs}}` |
-| `POST /api/cinematic` | partial merge | Apply optional `{applyPreset:true, mode}` then merge scalar fields; live-applied through `App::setCinematicConfig` (config saved, engine reconfigured, `SceneLinkNode` recreated — no reboot) |
+| `POST /api/cinematic` | partial merge | Apply optional `{applyPreset:true, mode}` then merge scalar fields; live-applied through `App::setCinematicConfig` (engine reconfigured, `SceneLinkNode` recreated, flash save debounced ~500 ms after the last change — no reboot) |
 
 Web **Cinematic** tab (toggle, presets, genre, sliders, companion link,
 live status) and the LVGL **Cine** screen (toggle + preset cycle + status)
 share the same `Config`/`Status` source of truth. Companion status, presets and
-knobs all round-trip without a flash write or reboot.
+knobs all round-trip live without a reboot; debounced saves batch rapid slider
+drag batched into one flash write.
 
 ## Safety / honesty notes
 

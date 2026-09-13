@@ -79,7 +79,7 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `POST /api/state/backlight` `{value}` (0–100) | live display backlight, persisted, **no reboot** |
 | `POST /api/state/timeout` `{value}` (0–86400, 0=never) | live screen timeout, persisted, **no reboot** |
 | `GET /api/cinematic` | cinematic config + `{active, companionAlive, status}` (scene/event idents, confidence, luminance/motion/progAudio, hue/sat/val, boom/tension) — see `docs/CINEMATIC.md` |
-| `POST /api/cinematic` | merge knobs / `{applyPreset:true, mode}` / enable toggle — live-applied, **no flash, no reboot** |
+| `POST /api/cinematic` | merge knobs / `{applyPreset:true, mode}` / enable toggle — live-applied, **debounced flash save, no reboot** |
 
 `ThemeDef` wire shape (`ThemeEngine::encode`/`decode`): `id`, `name`,
 `builtin`, `brightness` (`{base,min}`), `saturation`, `palette` (`#RRGGBB`
@@ -119,7 +119,7 @@ flicker).
 | `/system` System | device name, Wi-Fi mode/AP config, OTA, reboot, firmware info |
 | `/themes` Themes | implemented: palette swatches + brightness/saturation, response + animation curves; select (global/per-strip), create/edit/delete non-built-ins, reset defaults |
 | `/devices` Devices & Sources | device table (capability chips, status, identify/configure/remove, **Details** expander with confidence %, integration hints, protocols & safety notes, fw/role/last-seen, **Manual identify** form using `capCatalog` + `connCatalog`), audio-source card with availability + **Active source / reason**; scans register peers without clobbering trust |
-| `/cinematic` Cinematic | on/off toggle, 5 reaction presets + genre overlay, live knobs (debounced, no reboot), companion multicast link (group/port/stale), live status (scene/event, lum/motion/prog-audio, boom/tension, companion alive) |
+| `/cinematic` Cinematic | on/off toggle, 5 reaction presets + genre overlay, live knobs (debounced, no reboot), room-mapping toggle + wave knobs (speed/decay/width/ring depth) + spatial-active indicator, companion multicast link (group/port/stale), live status (scene/event, lum/motion/prog-audio, boom/tension, companion alive) |
 | `/diagnostics` Diagnostics | mic detect, audio level, FFT ok, LED-driver ok, memory, CPU, config version, errors (spec §31) |
 
 ## 5. Live data & preview

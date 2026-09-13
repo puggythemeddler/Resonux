@@ -86,9 +86,11 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   of strips stay beat-locked over plain WiFi. See `docs/MULTI_CONTROLLER.md`.
 - **Cinematic Mode** — movie/TV scene-reactive lighting. A PC companion
   (`tools/companion/`) watches the program source (host audio, optional screen
-  region) and streams 30-byte `SceneFrame` packets over UDP multicast; the ESP32
-  fuses that with its own mic analysis and *multiplies* a subtle look onto the
-  theme (scene/event envelopes, cooldown-gated booms — no strobe, companion
+  region) and streams 28-byte `SceneFrame` packets (optionally carrying a
+  bounded spatial block: on-screen focus + zone salience) over UDP multicast;
+  the ESP32 fuses that with its own mic analysis and *multiplies* a subtle look
+  onto the theme (bounded scene memory + 8-mood intent director, spatial
+  wave-propagation room mapping, cooldown-gated booms — no strobe, companion
   dead → automatic audio-only fallback). Off by default; web Cinematic tab,
   LVGL Cine screen and `GET/POST /api/cinematic`. See `docs/CINEMATIC.md`.
 
@@ -262,7 +264,7 @@ bass/mid/treble, beat, free heap).
 - `pio test -e native` — **host-side unit tests** for the pure logic (colour
   math, palettes, smoothing, effect rendering, LED frame ops, device
   classification registry, source auto-select, theme blending, cinematic
-  codec/engine — 105 tests across 5 suites); runs in CI.
+  codec/engine/spatial-wave — 128 tests across 5 suites); runs in CI.
 - `python tools/python/analyze.py song.mp3` — replicate the band/beat pipeline
   in NumPy; produces waveform/spectrum/band/beat/LED-sim visualizations
   (`docs/TESTING.md`).
@@ -308,11 +310,12 @@ hints, and a manual-identify path for devices discovery can't name),
 trusted device enables them; the dashboard explains the active source's reason
 at boot), **multi-source audio selection**
 (mic / test tone / none with boot auto-select), **theme cross-fades**, **host-side
-unit tests in CI** (105 pass), **cinematic mode** (on-device mic analysis fused
-with a companion `SceneFrame` feed over UDP multicast, multiplying a subtle
-look onto the theme with cooldown-gated booms and a dead-companion audio-only
-fallback; web Cinematic tab, LVGL Cine screen and live `/api/cinematic`
-endpoints) and the **LVGL touchscreen UI**
+unit tests in CI** (128 pass), **cinematic mode** (on-device mic analysis
+  fused with a companion `SceneFrame` feed over UDP multicast, bounded scene
+  memory + 8-mood intent director, optional spatial block with room-mapping
+  wave propagation, cooldown-gated booms and a dead-companion audio-only
+  fallback, debounced config saving; web Cinematic tab, LVGL Cine screen and
+  live `/api/cinematic` endpoints) and the **LVGL touchscreen UI**
 (hardware-independent display/touch abstraction) are implemented and compile
 cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~65 %
 flash with the touchscreen env); hardware bring-up is pending parts arrival

@@ -221,7 +221,7 @@ never downgrades a configured row.
 Cinematic Mode is a movie/TV *content* layer on top of the theme engine. It is
 off by default (`cinematic.enabled=false` in `config.json` / Cinematic web tab
 toggle). A PC running `tools/companion/resonux_companion.py` emits SceneFrames
-(≈30-byte UDP multicast packets, 239.255.42.11:9772) describing scene kind,
+(≈28-byte UDP multicast packets, 239.255.42.11:9772) describing scene kind,
 discrete events, average luminance, dominant colour, motion and observed
 program audio. The ESP32 fuses those with its own on-board audio analysis.
 
@@ -252,11 +252,20 @@ program audio. The ESP32 fuses those with its own on-board audio analysis.
 8. **Safety claim:** the engine output is *multiplied* onto the theme frame and
    is always bounded by `maxBrightness` and the theme's own brightness — a black
    screen or a dead companion can never turn the strip to full white.
+ 9. **Room mapping (spatial):** run the companion with a screen region
+   (`--screen x,y,w,h`), per-strip `roomX/roomY` mapped across the room, and
+   enable Room mapping in the Cinematic tab. An on-screen explosion/bright blob
+   must make the *nearest* strip(s) burst first while opposite strips follow
+   through the wave; a frozen screen rests on the ambient floor. Verify the
+   wave knobs (`waveSpeed`/`waveDecay`/`waveWidth`) change the propagation
+   visibly and that `status.spatialActive` shows only while the video feed is
+   live.
 
 **Pass:** companion feed never drives the LEDs directly (engine → theme →
 LEDDriver only), every preset knob round-trips through `/api/cinematic`, the
 failsafe within `staleMs` recovers audio-only reaction, sustained loud content
-never strobes, and both UIs agree.
+never strobes, spatial mapping only brightens zones with live video, and both
+UIs agree.
 
 ## Safety / power notes
 

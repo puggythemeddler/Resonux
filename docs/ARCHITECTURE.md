@@ -741,14 +741,17 @@ Full details: `docs/ARTNET.md`. Summary:
 Full details: `docs/CINEMATIC.md`. Summary:
 
 - **Division of labour:** a PC companion (`tools/companion/`) watches the
-  *program source* (host audio, optionally a screen region) and streams 30-byte
-  `SceneFrame` UDP packets (multicast `239.255.42.11:9772`). The ESP32 fuses
-  that with its own on-device audio analysis.
-- **Pure layer (`src/cinema/`, host-testable):** `SceneFrame.h` (packed codec),
-  `CinematicConfig.h` (5 presets, 2 genre overlays, clamped knobs),
-  `SceneAnalyzer.h` (boom/impact cooldowns, whisper/silence/dialogue/tension),
-  `CinematicEngine.h` (scene+event envelopes, video smoothing, `Look`),
-  `CinematicApply.h` (multiplies the look onto the theme frame).
+  *program source* (host audio, optionally a screen region) and streams 28-byte
+  `SceneFrame` base packets (optionally with a bounded spatial block) over UDP
+  multicast (`239.255.42.11:9772`). The ESP32 fuses that with its own on-device
+  audio analysis.
+- **Pure layer (`src/cinema/`, host-testable):** `SceneFrame.h` (packed codec)
+  + `SpatialBlock.h` (optional spatial extension), `CinematicConfig.h`
+  (5 presets, 2 genre overlays, clamped knobs), `SceneAnalyzer.h`
+  (boom/impact cooldowns, whisper/silence/dialogue/tension), `SceneMemory.h` +
+  `CinematicDirector.h` (bounded scene memory → 8-mood intent), `CinematicEngine.h`
+  (scene+event envelopes, video smoothing, `Look`, `SpatialWaveField` room
+  mapping), `CinematicApply.h` (multiplies the look onto the theme frame).
 - **Transport:** `SceneLinkNode` — receive-only UDP multicast task (core 0,
   mutex-guarded latest-frame copy, stale fallback). The ESP32 never transmits
   SceneFrames.
