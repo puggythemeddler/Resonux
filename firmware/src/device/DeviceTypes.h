@@ -46,9 +46,13 @@ enum Capability : uint32_t {
   CAP_TOUCH          = 1u << 16,
   CAP_NETWORK        = 1u << 17,
   CAP_STORAGE        = 1u << 18,
+  CAP_SCREEN_CAPTURE = 1u << 19,  // captures what a screen/source is showing
+  CAP_VIDEO_INPUT    = 1u << 20,  // accepts a video signal in
+  CAP_HDMI_CAPTURE   = 1u << 21,  // HDMI capture/loop device
+  CAP_SYSTEM_AUDIO   = 1u << 22,  // observes the system/program audio track
 };
 
-constexpr int kCapabilityCount = 19;
+constexpr int kCapabilityCount = 23;
 
 struct CapabilityInfo {
   Capability  bit;
@@ -77,6 +81,10 @@ inline const CapabilityInfo& capabilityAt(int i) {
       {CAP_TOUCH, "touch", "Touch"},
       {CAP_NETWORK, "network", "Network"},
       {CAP_STORAGE, "storage", "Storage"},
+      {CAP_SCREEN_CAPTURE, "screen_capture", "Screen capture"},
+      {CAP_VIDEO_INPUT, "video_input", "Video input"},
+      {CAP_HDMI_CAPTURE, "hdmi_capture", "HDMI capture"},
+      {CAP_SYSTEM_AUDIO, "system_audio", "System audio"},
   };
   return kCaps[i];
 }
@@ -115,9 +123,10 @@ enum ConnectionType : uint8_t {
   CONN_ARTNET_UDP,
   CONN_SYNC_UDP,       // Resonux Sync multicast
   CONN_NETWORK,        // RESO_DISCOVER peer (LAN responder)
+  CONN_SCENE_UDP,      // Cinematic companion SceneFrame multicast
 };
 
-constexpr int kConnectionCount = 17;
+constexpr int kConnectionCount = 18;
 constexpr int CONN_COUNT = kConnectionCount;
 
 struct ConnectionInfo {
@@ -144,6 +153,7 @@ inline const ConnectionInfo& connectionAt(int i) {
       {CONN_ARTNET_UDP, "artnet", "Art-Net UDP"},
       {CONN_SYNC_UDP, "sync", "Sync UDP"},
       {CONN_NETWORK, "network", "Network"},
+      {CONN_SCENE_UDP, "scene", "Scene feed UDP"},
       {CONN_UNKNOWN, "unknown", "Unknown"},
   };
   return kConns[i];
@@ -178,6 +188,7 @@ inline const char* connectionName(ConnectionType c) {
     case CONN_SERIAL: return "Serial";
     case CONN_ARTNET_UDP: return "Art-Net UDP";
     case CONN_SYNC_UDP: return "Sync UDP";
+    case CONN_SCENE_UDP: return "Scene feed UDP";
     default: return "unknown";
   }
 }

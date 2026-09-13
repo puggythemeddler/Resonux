@@ -6,7 +6,7 @@ meaningful automated tests cheap.
 
 ## 1. Host unit tests (x86, CI-friendly)
 
-**Implemented**: `pio test -e native` runs 84 Unity assertions across 4 host
+**Implemented**: `pio test -e native` runs 105 Unity assertions across 5 host
 suites — `test_logic` (colour math, smoothing, effects), `test_sync`
 (multicast clock/packet), `test_system` (restart/power-off state machine),
 `test_device` (universal detection: capability model, device registry,
@@ -14,12 +14,20 @@ profile validation incl. the AM-006 conditioning profile, deterministic
 `classify()`, hysteresis-aware `SourceSelector` fallback/preferred logic,
 `TestToneSource`, theme cross-fade blending, the RESO_DISCOVER wire codec
 round-trip/garbage/bounds, tri-layer confidence scoring, integration
-recommendation mapping, `deviceEnablesSource`, and `manualDeclareStatus`) —
-against the pure layers: `util/Rgb.h` (HSL↔RGB, palettes, blend/scale/
-luma/clamps), `util/Smoother.h`, `effects/EffectUtil.h`, `effects/LedFrame.h`,
-`audio/AudioFrame.h`, real effects (`BassPulseEffect`, `GradientEffect`),
-`firmware/src/system/SystemMode.h`, `firmware/src/device/*` and
-`firmware/src/audio/SourceSelector.h`.
+recommendation mapping, `deviceEnablesSource`, and `manualDeclareStatus`) and
+`test_cinema` (Cinematic Mode: SceneFrame codec round-trip/validation/idents,
+config presets + network-field preservation + clamp/NaN handling, `SceneAnalyzer`
+boom/impact cooldowns + sustained-loud/whisper/silence/dialogue/tension gates,
+`CinematicEngine` audio-only/video/fused fusion, flash envelope + min-gap, boom
+re-trigger blocking, failsafe/stale, whisper-dim, video colour tint, genre
+overlays, and `applyToThemeFrame` maths) — against the pure layers:
+`util/Rgb.h` (HSL↔RGB, palettes, blend/scale/luma/clamps), `util/Smoother.h`,
+`effects/EffectUtil.h`, `effects/LedFrame.h`, `audio/AudioFrame.h`, real
+effects (`BassPulseEffect`, `GradientEffect`), `firmware/src/system/SystemMode.h`,
+`firmware/src/device/*`, `firmware/src/audio/SourceSelector.h` and
+`firmware/src/cinema/*`
+(`SceneFrame.h`, `CinematicConfig.h`, `SceneAnalyzer.h`, `CinematicEngine.h`,
+`CinematicApply.h`).
 Note: `pio test -e native` compiles test sources only, which is why the new
 device/source/blend logic lives in Arduino-free headers (the registry, profile
 table and selector run unchanged on host and device).

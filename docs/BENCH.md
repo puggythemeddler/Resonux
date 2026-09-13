@@ -216,6 +216,48 @@ end-to-end check).
 the reason line is truthful at boot, manual declares persist, and re-detection
 never downgrades a configured row.
 
+## 15. Cinematic Mode (Phase 13)
+
+Cinematic Mode is a movie/TV *content* layer on top of the theme engine. It is
+off by default (`cinematic.enabled=false` in `config.json` / Cinematic web tab
+toggle). A PC running `tools/companion/resonux_companion.py` emits SceneFrames
+(≈30-byte UDP multicast packets, 239.255.42.11:9772) describing scene kind,
+discrete events, average luminance, dominant colour, motion and observed
+program audio. The ESP32 fuses those with its own on-board audio analysis.
+
+1. **Zero-dep smoke feed:** on the PC, `python tools/companion/resonux_companion.py
+   --sim --once --frames 20 --verbose` prints 20 frames and exits. Then run it
+   without `--once` so the feed keeps streaming to the multicast group.
+2. **Link up:** in the Cinematic web tab enable "Cinematic Mode" and
+   "Receive companion frames". Serial shows `[scene] listening 239.255.42.11:9772`;
+   the tab shows `companion feed live`, scene/event idents and lum/motion/audio
+   updating each frame. **Pass:** the LEDs respond to the synthetic plot
+   (quiet→dim, boom→flash) through the active theme — never replacing it.
+3. **Presets:** tap each reaction preset (Subtle…Extreme) — reaction speed,
+   flash intensity and whisper dim must change audibly (bigger flashes on
+   Extreme), then verify a manual knob edit (e.g. max brightness) persists
+   across reboot.
+4. **Failsafe:** kill the companion. Within `staleMs` (default 1200 ms) the tab
+   flips to `device audio only` and the lights keep reacting to the *device's*
+   microphone audio. Kill the audio too → lights settle to the ambient floor,
+   no freeze.
+5. **No strobe:** play loud, sustained music (or the companion `--scene music`
+   with high level) — the boom cooldown (450 ms default) and flash min-gap
+   (90 ms) must stop the continuous flashing the naïe analysis would produce.
+6. **Pinned test signal:** `--scene action --event boom --conf 95` forces the
+   scene/event regardless of the audio — the flash envelope should fire
+   on every frame for that event.
+7. **Touchscreen:** on the `esp32-s3-ui` build the Cine tab toggles Cinematic
+   Mode, cycles presets and shows the same live status the web tab shows.
+8. **Safety claim:** the engine output is *multiplied* onto the theme frame and
+   is always bounded by `maxBrightness` and the theme's own brightness — a black
+   screen or a dead companion can never turn the strip to full white.
+
+**Pass:** companion feed never drives the LEDs directly (engine → theme →
+LEDDriver only), every preset knob round-trips through `/api/cinematic`, the
+failsafe within `staleMs` recovers audio-only reaction, sustained loud content
+never strobes, and both UIs agree.
+
 ## Safety / power notes
 
 - Common ground between PSU, strips and S3; never run strip current through the

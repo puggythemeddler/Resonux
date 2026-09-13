@@ -125,6 +125,12 @@ select, input[type=text], input[type=number] {
   font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
   border: 1px solid var(--border); color: var(--muted); background: var(--panel);
 }
+.chip-btn {
+  font-size: 12px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); color: var(--text); background: var(--panel-2);
+}
+.chip-btn:hover { border-color: var(--accent); }
+.chip-btn.on { border-color: var(--accent); background: var(--accent); color: #fff; }
 .device-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .device-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .device-edit { flex: 1 1 100%; border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 2px; }

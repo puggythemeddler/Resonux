@@ -2,6 +2,8 @@
 #include "audio/I2SMicSource.h"
 #include "audio/SourceSelector.h"
 #include "audio/TestToneSource.h"
+#include "cinema/CinematicApply.h"
+#include "cinema/SceneLinkNode.h"
 #include "config/ConfigDefaults.h"
 #include "config/ConfigStore.h"
 #include "effects/EffectRegistry.h"
@@ -162,6 +164,16 @@ bool App::begin() {
     }
   }
 
+  _cinEngine.configure(_config.cinematic);
+  if (_config.cinematic.receiveUdp) {
+    _sceneLink = new SceneLinkNode();
+    if (!_sceneLink->begin(_config.cinematic)) {
+      logBoot("scene", "init FAILED or disabled");
+      delete _sceneLink;
+      _sceneLink = nullptr;
+    }
+  }
+
   xTaskCreatePinnedToCore(App::audioTaskEntry, "audio", 4096, this, 24,
                           &_audioTask, 1);
   xTaskCreatePinnedToCore(App::ledTaskEntry, "led", 4096, this, 20, &_ledTask,
@@ -265,6 +277,32 @@ bool App::setDisplayTimeout(int seconds) {
   return ConfigStore::save(_config);
 }
 
+bool App::cameraUdpLive() const {
+  return _sceneLink && _config.cinematic.receiveUdp &&
+         _sceneLink->live(_config.cinematic.staleMs);
+}
+
+bool App::setCinematicConfig(const cine::Config& c) {
+  _config.cinematic = c;
+  cine::clampConfig(_config.cinematic);
+  if (!ConfigStore::save(_config)) return false;
+  _cinEngine.configure(_config.cinematic);
+
+  // (re)bind the companion listener when the receive settings change.
+  if (_config.cinematic.receiveUdp) {
+    delete _sceneLink;
+    _sceneLink = new SceneLinkNode();
+    if (!_sceneLink->begin(_config.cinematic)) {
+      delete _sceneLink;
+      _sceneLink = nullptr;
+    }
+  } else {
+    delete _sceneLink;
+    _sceneLink = nullptr;
+  }
+  return true;
+}
+
 bool App::requestRestart() { return startShutdown(sys::Action::Restart); }
 bool App::requestPowerOff() { return startShutdown(sys::Action::PowerOff); }
 
@@ -298,6 +336,7 @@ void App::gracefulShutdown() {
     _artnet->stop();
   }
   if (_sync) _sync->stop();
+  if (_sceneLink) _sceneLink->stop();
 
   // 2. Persist whatever state matters, best-effort and bounded.
   ConfigStore::save(_config);
@@ -377,6 +416,27 @@ void App::ledLoop() {
 
   const float master =
       _config.masterBrightness ? _config.masterBrightness / 255.0f : 1.0f;
+  const cine::Config& cineCfg = _config.cinematic;
+  const bool cineOn = cineCfg.enabled;
+
+  // Cinematic Mode: fuse local audio features + (optionally) the companion
+  // SceneFrame into a Look, then modulate every strip's theme output. With
+  // cinematic disabled the ThemeFrame passes through untouched.
+  cine::AudioFeatures caf;
+  if (cineOn) {
+    caf = _cinAnalyzer.process(f);
+    if (_sceneLink && _sceneLink->live(cineCfg.staleMs)) {
+      sceneframe::Frame sf;
+      if (_sceneLink->frame(sf)) {
+        _cinEngine.update(caf, &sf, now);
+        _cinStatus = _cinEngine.status();
+      }
+    } else {
+      _cinEngine.update(caf, nullptr, now);
+      _cinStatus = _cinEngine.status();
+    }
+  }
+
   ThemeEngine& te = ThemeEngine::instance();
   for (int i = 0; i < _stripCount; ++i) {
     StripRuntime* st = _strips[i];
@@ -384,6 +444,7 @@ void App::ledLoop() {
     uint32_t period = 1000u / (st->cfg().targetFps ? st->cfg().targetFps : 60);
     if (now - st->lastStepMs() >= period) {
       Themes::ThemeFrame th = te.processStrip(i, f, now);
+      if (cineOn) cine::applyToThemeFrame(th, _cinEngine.look(), cineCfg);
       th.brightness *= master;
       st->step(f, now, &th);
     }
@@ -401,6 +462,11 @@ void App::ledLoop() {
         Serial.printf(" seq=%u off=%ldms alive=%d", _sync->seq(),
                       (long)_sync->clockOffsetMs(), _sync->masterAlive() ? 1 : 0);
       }
+    }
+    if (cineOn) {
+      Serial.printf(" cine=%d %s/%s amp=%.2f", (int)_cinStatus.source,
+                    sceneframe::sceneIdent(_cinStatus.scene),
+                    sceneframe::eventIdent(_cinStatus.event), _cinStatus.audioLevel);
     }
     Serial.println();
   }

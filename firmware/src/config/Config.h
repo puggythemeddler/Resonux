@@ -1,6 +1,7 @@
 #pragma once
 #include "audio/AudioAnalyzer.h"
 #include "audio/SourceKind.h"
+#include "cinema/CinematicConfig.h"
 #include "config/ConfigDefs.h"
 #include "display/DisplayTypes.h"
 #include "effects/Effect.h"
@@ -120,4 +121,5 @@ struct Config {
   DisplayConfig      display;
   int                fixtureCount = 0;
   FixtureConfig      fixtures[kMaxFixtures];
+  cine::Config       cinematic;   // Cinematic Mode (companion + audio fusion)
 };

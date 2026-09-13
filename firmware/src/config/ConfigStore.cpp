@@ -184,6 +184,75 @@ void deserializeSync(JsonObject s, SyncConfig& c) {
   c.timeoutMs = clampInt(s["timeoutMs"] | c.timeoutMs, 100, 10000);
 }
 
+void serializeCinematic(JsonObject s, const cine::Config& c) {
+  s["enabled"] = c.enabled;
+  s["mode"] = c.mode;
+  s["genre"] = c.genre;
+  s["sensitivity"] = c.sensitivity;
+  s["reaction"] = c.reaction;
+  s["visualInfluence"] = c.visualInfluence;
+  s["audioInfluence"] = c.audioInfluence;
+  s["colorInfluence"] = c.colorInfluence;
+  s["speed"] = c.speed;
+  s["smoothing"] = c.smoothing;
+  s["flashIntensity"] = c.flashIntensity;
+  s["flashDurationMs"] = c.flashDurationMs;
+  s["flashMinGapMs"] = c.flashMinGapMs;
+  s["boomCooldownMs"] = c.boomCooldownMs;
+  s["whisperDim"] = c.whisperDim;
+  s["maxBrightness"] = c.maxBrightness;
+  s["ambientFloor"] = c.ambientFloor;
+  s["receiveUdp"] = c.receiveUdp;
+  s["group"] = c.group;
+  s["port"] = c.port;
+  s["staleMs"] = c.staleMs;
+}
+
+void deserializeCinematic(JsonObject s, cine::Config& c) {
+  c.enabled = s["enabled"] | c.enabled;
+  c.mode = clampInt(s["mode"] | c.mode, 0, cine::MODE_COUNT - 1);
+  c.genre = clampInt(s["genre"] | c.genre, 0, cine::GENRE_COUNT - 1);
+  c.sensitivity = validFloat(s["sensitivity"])
+                      ? clampFloat(s["sensitivity"].as<float>(), 0.25f, 3.0f)
+                      : c.sensitivity;
+  c.reaction = validFloat(s["reaction"])
+                   ? clampFloat(s["reaction"].as<float>(), 0.0f, 1.5f)
+                   : c.reaction;
+  c.visualInfluence = validFloat(s["visualInfluence"])
+                          ? clampFloat(s["visualInfluence"].as<float>(), 0.0f, 1.0f)
+                          : c.visualInfluence;
+  c.audioInfluence = validFloat(s["audioInfluence"])
+                         ? clampFloat(s["audioInfluence"].as<float>(), 0.0f, 1.0f)
+                         : c.audioInfluence;
+  c.colorInfluence = validFloat(s["colorInfluence"])
+                         ? clampFloat(s["colorInfluence"].as<float>(), 0.0f, 2.0f)
+                         : c.colorInfluence;
+  c.speed = validFloat(s["speed"]) ? clampFloat(s["speed"].as<float>(), 0.0f, 1.0f)
+                                   : c.speed;
+  c.smoothing = validFloat(s["smoothing"])
+                    ? clampFloat(s["smoothing"].as<float>(), 0.0f, 1.0f)
+                    : c.smoothing;
+  c.flashIntensity = validFloat(s["flashIntensity"])
+                         ? clampFloat(s["flashIntensity"].as<float>(), 0.0f, 1.0f)
+                         : c.flashIntensity;
+  c.flashDurationMs = clampInt(s["flashDurationMs"] | c.flashDurationMs, 30, 1000);
+  c.flashMinGapMs = clampInt(s["flashMinGapMs"] | c.flashMinGapMs, 20, 1000);
+  c.boomCooldownMs = clampInt(s["boomCooldownMs"] | c.boomCooldownMs, 50, 2000);
+  c.whisperDim = validFloat(s["whisperDim"])
+                     ? clampFloat(s["whisperDim"].as<float>(), 0.0f, 1.0f)
+                     : c.whisperDim;
+  c.maxBrightness = validFloat(s["maxBrightness"])
+                        ? clampFloat(s["maxBrightness"].as<float>(), 0.0f, 1.0f)
+                        : c.maxBrightness;
+  c.ambientFloor = validFloat(s["ambientFloor"])
+                       ? clampFloat(s["ambientFloor"].as<float>(), 0.0f, 0.5f)
+                       : c.ambientFloor;
+  c.receiveUdp = s["receiveUdp"] | c.receiveUdp;
+  strncpy(c.group, s["group"] | c.group, sizeof(c.group) - 1);
+  c.port = clampInt(s["port"] | c.port, 1024, 65535);
+  c.staleMs = clampInt(s["staleMs"] | c.staleMs, 100, 10000);
+}
+
 }  // namespace
 
 bool ConfigStore::begin() {
@@ -323,6 +392,11 @@ bool ConfigStore::load(Config& cfg) {
     deserializeSync(sy, cfg.sync);
   }
 
+  JsonObject ci = doc["cinematic"].as<JsonObject>();
+  if (!ci.isNull()) {
+    deserializeCinematic(ci, cfg.cinematic);
+  }
+
   if (doc["fixtures"].is<JsonArray>()) {
     JsonArray fixes = doc["fixtures"].as<JsonArray>();
     cfg.fixtureCount =
@@ -418,6 +492,9 @@ void buildDoc(const Config& cfg, JsonDocument& doc) {
 
   JsonObject sy = doc["sync"].to<JsonObject>();
   serializeSync(sy, cfg.sync);
+
+  JsonObject ci = doc["cinematic"].to<JsonObject>();
+  serializeCinematic(ci, cfg.cinematic);
 
   JsonArray fixes = doc["fixtures"].to<JsonArray>();
   for (int i = 0; i < cfg.fixtureCount; ++i) {

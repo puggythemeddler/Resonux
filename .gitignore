@@ -9,6 +9,10 @@ web/node_modules/
 web/dist/
 web/.vite/
 
+# ---- Python (companion / dev tools) ----
+__pycache__/
+*.pyc
+
 # ---- OS / editor cruft ----
 .DS_Store
 Thumbs.db

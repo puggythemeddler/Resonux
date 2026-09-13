@@ -80,6 +80,8 @@ void configDefaults(Config& cfg) {
   sc.heartbeatMs = 32;
   sc.timeoutMs = 600;
 
+  cine::defaultConfig(cfg.cinematic);
+
   cfg.net.enabled = true;
   cfg.net.mode = NET_AP_STA_FALLBACK;
   strncpy(cfg.net.apSsid, "Resonux", sizeof(cfg.net.apSsid) - 1);

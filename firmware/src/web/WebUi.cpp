@@ -52,6 +52,8 @@ bool WebUi::begin(App& app) {
   _server.on("/api/device", HTTP_DELETE, [this]() { handleDevice(); });
   _server.on("/api/audio/sources", HTTP_GET, [this]() { sendAudioSources(); });
   _server.on("/api/audio/source", HTTP_POST, [this]() { handleAudioSource(); });
+  _server.on("/api/cinematic", HTTP_GET, [this]() { sendCinematic(); });
+  _server.on("/api/cinematic", HTTP_POST, [this]() { handleCinematicPut(); });
   _server.on(
       "/api/ota", HTTP_POST,
       [this]() {
@@ -713,4 +715,117 @@ void WebUi::handleAudioSource() {
   String out;
   serializeJson(doc, out);
   _server.send(200, "application/json", out);
+}
+
+void WebUi::sendCinematic() {
+  const cine::Config& c = _app->config().cinematic;
+  const cine::Status& s = _app->cinematicStatus();
+
+  JsonDocument doc;
+  JsonObject cfg = doc["config"].to<JsonObject>();
+  cfg["enabled"] = c.enabled;
+  cfg["mode"] = c.mode;
+  cfg["modeId"] = cine::modeIdent(c.mode);
+  cfg["modeLabel"] = cine::modeLabel(c.mode);
+  cfg["genre"] = c.genre;
+  cfg["genreId"] = cine::genreIdent(c.genre);
+  cfg["genreLabel"] = cine::genreLabel(c.genre);
+  cfg["sensitivity"] = c.sensitivity;
+  cfg["reaction"] = c.reaction;
+  cfg["visualInfluence"] = c.visualInfluence;
+  cfg["audioInfluence"] = c.audioInfluence;
+  cfg["colorInfluence"] = c.colorInfluence;
+  cfg["speed"] = c.speed;
+  cfg["smoothing"] = c.smoothing;
+  cfg["flashIntensity"] = c.flashIntensity;
+  cfg["flashDurationMs"] = c.flashDurationMs;
+  cfg["flashMinGapMs"] = c.flashMinGapMs;
+  cfg["boomCooldownMs"] = c.boomCooldownMs;
+  cfg["whisperDim"] = c.whisperDim;
+  cfg["maxBrightness"] = c.maxBrightness;
+  cfg["ambientFloor"] = c.ambientFloor;
+  cfg["receiveUdp"] = c.receiveUdp;
+  cfg["group"] = c.group;
+  cfg["port"] = c.port;
+  cfg["staleMs"] = c.staleMs;
+
+  doc["active"] = _app->cinematicActive();
+  doc["companionAlive"] = _app->cameraUdpLive();
+  JsonObject st = doc["status"].to<JsonObject>();
+  st["source"] = _app->cinematicActive() ? (int)s.source : -1;
+  st["scene"] = _app->cinematicActive() ? (int)s.scene : -1;
+  st["sceneId"] =
+      _app->cinematicActive() ? sceneframe::sceneIdent(s.scene) : "off";
+  st["event"] = _app->cinematicActive() ? (int)s.event : -1;
+  st["eventId"] =
+      _app->cinematicActive() ? sceneframe::eventIdent(s.event) : "off";
+  st["eventConfidence"] = s.eventConfidence;
+  st["sceneConfidence"] = s.sceneConfidence;
+  st["luminance"] = s.luminance;
+  st["motion"] = s.motion;
+  st["progAudio"] = s.progAudio;
+  st["hue"] = s.hue;
+  st["sat"] = s.sat;
+  st["val"] = s.val;
+  st["audioLevel"] = s.audioLevel;
+  st["boom"] = s.boom;
+  st["tension"] = s.tension;
+  st["lastFrameMs"] = s.lastFrameMs;
+
+  String out;
+  serializeJson(doc, out);
+  _server.send(200, "application/json", out);
+}
+
+void WebUi::handleCinematicPut() {
+  JsonDocument doc;
+  if (deserializeJson(doc, _server.arg("plain")) != DeserializationError::Ok) {
+    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad_json\"}");
+    return;
+  }
+
+  cine::Config c = _app->config().cinematic;
+  if (doc["applyPreset"].is<bool>() && doc["applyPreset"].as<bool>() &&
+      doc["mode"].is<int>()) {
+    cine::applyPreset(c, doc["mode"].as<int>());
+  }
+  if (doc["enabled"].is<bool>()) c.enabled = doc["enabled"].as<bool>();
+  if (doc["mode"].is<int>() && !(doc["applyPreset"].is<bool>() &&
+                                 doc["applyPreset"].as<bool>())) {
+    c.mode = doc["mode"].as<int>();
+  }
+  if (doc["genre"].is<int>()) c.genre = doc["genre"].as<int>();
+
+  auto mergeFloat = [&doc](const char* key, float& v) {
+    if (doc[key].is<float>()) v = doc[key].as<float>();
+  };
+  auto mergeUint = [&doc](const char* key, uint16_t& v) {
+    if (doc[key].is<int>()) v = (uint16_t)doc[key].as<int>();
+  };
+  mergeFloat("sensitivity", c.sensitivity);
+  mergeFloat("reaction", c.reaction);
+  mergeFloat("visualInfluence", c.visualInfluence);
+  mergeFloat("audioInfluence", c.audioInfluence);
+  mergeFloat("colorInfluence", c.colorInfluence);
+  mergeFloat("speed", c.speed);
+  mergeFloat("smoothing", c.smoothing);
+  mergeFloat("flashIntensity", c.flashIntensity);
+  mergeUint("flashDurationMs", c.flashDurationMs);
+  mergeUint("flashMinGapMs", c.flashMinGapMs);
+  mergeUint("boomCooldownMs", c.boomCooldownMs);
+  mergeFloat("whisperDim", c.whisperDim);
+  mergeFloat("maxBrightness", c.maxBrightness);
+  mergeFloat("ambientFloor", c.ambientFloor);
+  if (doc["receiveUdp"].is<bool>()) c.receiveUdp = doc["receiveUdp"].as<bool>();
+  if (doc["group"].is<const char*>()) {
+    strncpy(c.group, doc["group"].as<const char*>(), sizeof(c.group) - 1);
+  }
+  mergeUint("port", c.port);
+  mergeUint("staleMs", c.staleMs);
+
+  if (!_app->setCinematicConfig(c)) {
+    _server.send(400, "application/json", "{\"ok\":false,\"error\":\"save_failed\"}");
+    return;
+  }
+  _server.send(200, "application/json", "{\"ok\":true}");
 }

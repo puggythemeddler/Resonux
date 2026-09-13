@@ -5,6 +5,7 @@
 
 #include <lvgl.h>
 #include <string.h>
+#include "cinema/CinematicEngine.h"
 #include "display/DisplayFactory.h"
 #include "esp_heap_caps.h"
 #include "runtime/App.h"
@@ -53,6 +54,9 @@ struct TouchUi::Impl {
   lv_obj_t* themeButtons[kMaxThemeButtons] = {};
   const char* themeIds[kMaxThemeButtons] = {};
   int themeCount = 0;
+  lv_obj_t* cineToggle = nullptr;  // Cinematic tab on/off
+  lv_obj_t* cineMode = nullptr;    // preset cycle button
+  lv_obj_t* cineStatus = nullptr;  // live status readout
   AudioFrame frame;
   uint32_t lastTick = 0;
 };
@@ -189,6 +193,21 @@ static void timeoutCb(lv_event_t* e) {
   App::instance().setDisplayTimeout(next);
 }
 
+static void cineToggleCb(lv_event_t*) {
+  cine::Config c = App::instance().config().cinematic;
+  c.enabled = !c.enabled;
+  App::instance().setCinematicConfig(c);
+}
+
+static void cinePresetCb(lv_event_t*) {
+  cine::Config c = App::instance().config().cinematic;
+  int next = c.mode + 1;
+  if (next >= cine::MODE_COUNT) next = cine::MODE_SUBTLE;
+  cine::applyPreset(c, next);
+  c.enabled = true;  // picking a preset arms cinematic mode
+  App::instance().setCinematicConfig(c);
+}
+
 static lv_obj_t* makeTab(lv_obj_t* tv, const char* title) {
   lv_obj_t* t = lv_tabview_add_tab(tv, title);
   lv_obj_set_style_pad_all(t, 8, 0);
@@ -250,6 +269,7 @@ void TouchUi::begin(DisplayManager& mgr) {
   lv_obj_t* tabNow = makeTab(tv, "Now");
   lv_obj_t* tabThemes = makeTab(tv, "Themes");
   lv_obj_t* tabSys = makeTab(tv, "System");
+  lv_obj_t* tabCine = makeTab(tv, "Cine");
 
   // --- Now playing -----------------------------------------------------------
   _impl->themeLabel = lv_label_create(tabNow);
@@ -407,6 +427,48 @@ void TouchUi::begin(DisplayManager& mgr) {
   lv_obj_set_style_text_font(sysNote, &lv_font_montserrat_12, 0);
   lv_obj_set_width(sysNote, LV_PCT(100));
   lv_label_set_long_mode(sysNote, LV_LABEL_LONG_WRAP);
+
+  // --- Cinematic --------------------------------------------------------------
+  lv_obj_set_scroll_dir(tabCine, LV_DIR_VER);
+  lv_obj_set_flex_flow(tabCine, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(tabCine, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(tabCine, 6, 0);
+
+  _impl->cineToggle = lv_btn_create(tabCine);
+  lv_obj_set_width(_impl->cineToggle, LV_PCT(100));
+  lv_obj_set_height(_impl->cineToggle, 48);
+  lv_obj_add_flag(_impl->cineToggle, LV_OBJ_FLAG_CHECKABLE | LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_color(_impl->cineToggle, lv_color_hex(0xFF7A18),
+                            LV_STATE_CHECKED);
+  lv_obj_add_event_cb(_impl->cineToggle, cineToggleCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* ctLbl = lv_label_create(_impl->cineToggle);
+  lv_label_set_text(ctLbl, "Cinematic Mode");
+  lv_obj_center(ctLbl);
+
+  lv_obj_t* pmLbl = lv_label_create(tabCine);
+  lv_label_set_text(pmLbl, "Reaction preset  (tap to cycle)");
+  lv_obj_set_style_text_color(pmLbl, lv_color_hex(0x8899AA), 0);
+  lv_obj_set_style_text_font(pmLbl, &lv_font_montserrat_12, 0);
+
+  _impl->cineMode = lv_btn_create(tabCine);
+  lv_obj_set_width(_impl->cineMode, LV_PCT(100));
+  lv_obj_set_height(_impl->cineMode, 44);
+  lv_obj_add_event_cb(_impl->cineMode, cinePresetCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cmLbl = lv_label_create(_impl->cineMode);
+  lv_obj_center(cmLbl);
+  lv_obj_set_user_data(_impl->cineMode, cmLbl);
+
+  lv_obj_t* stLbl = lv_label_create(tabCine);
+  lv_label_set_text(stLbl, "Live status");
+  lv_obj_set_style_text_color(stLbl, lv_color_hex(0x8899AA), 0);
+  lv_obj_set_style_text_font(stLbl, &lv_font_montserrat_12, 0);
+
+  _impl->cineStatus = lv_label_create(tabCine);
+  lv_obj_set_width(_impl->cineStatus, LV_PCT(100));
+  lv_label_set_long_mode(_impl->cineStatus, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_color(_impl->cineStatus, lv_color_hex(0x22D3EE), 0);
+  lv_obj_set_style_text_font(_impl->cineStatus, &lv_font_montserrat_14, 0);
 }
 
 void TouchUi::tick(uint32_t nowMs) {
@@ -485,6 +547,47 @@ void TouchUi::render() {
              (unsigned)(ESP.getFreeHeap() / 1024),
              (unsigned long)(millis() / 1000), art);
     lv_label_set_text(I.statusLabel, buf);
+  }
+
+  // Cinematic tab refresh
+  cine::Config cc = App::instance().config().cinematic;
+  if (I.cineToggle) {
+    if (cc.enabled) {
+      lv_obj_add_state(I.cineToggle, LV_STATE_CHECKED);
+    } else {
+      lv_obj_clear_state(I.cineToggle, LV_STATE_CHECKED);
+    }
+  }
+  if (I.cineMode) {
+    lv_obj_t* lbl = (lv_obj_t*)lv_obj_get_user_data(I.cineMode);
+    if (lbl) {
+      char buf[64];
+      snprintf(buf, sizeof(buf), "%s%s", cine::modeLabel(cc.mode),
+               cc.genre != cine::GENRE_NONE ? "  ·  genre" : "");
+      lv_label_set_text(lbl, buf);
+    }
+  }
+  if (I.cineStatus) {
+    if (!App::instance().cinematicActive()) {
+      lv_label_set_text(
+          I.cineStatus,
+          "Off. Tap the toggle to react lights to\n"
+          "movies and TV via the companion app.");
+    } else {
+      const cine::Status& s = App::instance().cinematicStatus();
+      char buf[256];
+      snprintf(buf, sizeof(buf),
+               "feed: %s\nscene %s / %s (conf %d%%)\n"
+               "lum %d · motion %d · prog-audio %d\n"
+               "amp %.2f · boom %.2f · tension %.2f",
+               App::instance().cameraUdpLive() ? "companion"
+                                                : "device audio only",
+               sceneframe::sceneLabel(s.scene), sceneframe::eventLabel(s.event),
+               (int)s.eventConfidence, (int)s.luminance, (int)s.motion,
+               s.progAudio ? 1 : 0, (double)s.audioLevel, (double)s.boom,
+               (double)s.tension);
+      lv_label_set_text(I.cineStatus, buf);
+    }
   }
 
   lv_timer_handler();

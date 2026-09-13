@@ -43,6 +43,8 @@ private:
   void handleDevice();                // GET|POST|DELETE /api/device?id=
   void sendAudioSources();            // GET /api/audio/sources
   void handleAudioSource();           // POST /api/audio/source
+  void sendCinematic();               // GET /api/cinematic
+  void handleCinematicPut();          // POST /api/cinematic
   String mimeFor(const String& path);
 
   App* _app = nullptr;

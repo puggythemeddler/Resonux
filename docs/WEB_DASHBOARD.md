@@ -2,9 +2,9 @@
 
 Status: **implemented in `web/`** — Vite + React + TS SPA, embedded into
 `firmware/data/web/` and served by `src/web/WebUi` on the device. Live,
-Themes, Devices & Sources, Configuration, and Firmware Update tabs are
-working. Uses short-interval `fetch` polling of `/api/frame` for the live
-spectrum (SSE remains a future optimization).
+Themes, Devices & Sources, Cinematic, Configuration, System and Firmware
+Update tabs are working. Uses short-interval `fetch` polling of `/api/frame`
+for the live spectrum (SSE remains a future optimization).
 
 Served locally by the ESP32. No cloud account, no external CDN, works fully
 offline on the controller's own Wi-Fi AP.
@@ -19,7 +19,8 @@ offline on the controller's own Wi-Fi AP.
 `*/api/audio/sources` (GET, incl. `active` + `reason` and device-derived
 `available`) + `*/api/audio/source` (POST), `*/api/system/*`
 (status/restart/power-off,
-with a simulated offline window on restart), `*/api/reboot` and `*/api/ota`, so
+with a simulated offline window on restart), `*/api/reboot`, `*/api/ota`, and
+`*/api/cinematic` (GET/POST with live status + preset/knob merging), so
 the whole UI can be developed and demoed with no hardware.
 
 ## 1. Stack & why
@@ -77,6 +78,8 @@ so it embeds into LittleFS and loads instantly on the AP network.
 | `POST /api/state/sensitivity` `{value}` (0–5) | live per-strip sensitivity, persisted, **no reboot** |
 | `POST /api/state/backlight` `{value}` (0–100) | live display backlight, persisted, **no reboot** |
 | `POST /api/state/timeout` `{value}` (0–86400, 0=never) | live screen timeout, persisted, **no reboot** |
+| `GET /api/cinematic` | cinematic config + `{active, companionAlive, status}` (scene/event idents, confidence, luminance/motion/progAudio, hue/sat/val, boom/tension) — see `docs/CINEMATIC.md` |
+| `POST /api/cinematic` | merge knobs / `{applyPreset:true, mode}` / enable toggle — live-applied, **no flash, no reboot** |
 
 `ThemeDef` wire shape (`ThemeEngine::encode`/`decode`): `id`, `name`,
 `builtin`, `brightness` (`{base,min}`), `saturation`, `palette` (`#RRGGBB`
@@ -116,6 +119,7 @@ flicker).
 | `/system` System | device name, Wi-Fi mode/AP config, OTA, reboot, firmware info |
 | `/themes` Themes | implemented: palette swatches + brightness/saturation, response + animation curves; select (global/per-strip), create/edit/delete non-built-ins, reset defaults |
 | `/devices` Devices & Sources | device table (capability chips, status, identify/configure/remove, **Details** expander with confidence %, integration hints, protocols & safety notes, fw/role/last-seen, **Manual identify** form using `capCatalog` + `connCatalog`), audio-source card with availability + **Active source / reason**; scans register peers without clobbering trust |
+| `/cinematic` Cinematic | on/off toggle, 5 reaction presets + genre overlay, live knobs (debounced, no reboot), companion multicast link (group/port/stale), live status (scene/event, lum/motion/prog-audio, boom/tension, companion alive) |
 | `/diagnostics` Diagnostics | mic detect, audio level, FFT ok, LED-driver ok, memory, CPU, config version, errors (spec §31) |
 
 ## 5. Live data & preview

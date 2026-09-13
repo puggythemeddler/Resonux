@@ -736,6 +736,32 @@ Full details: `docs/ARTNET.md`. Summary:
 
 ---
 
+## 18c. Cinematic Mode (movie/TV scene-reactive lighting)
+
+Full details: `docs/CINEMATIC.md`. Summary:
+
+- **Division of labour:** a PC companion (`tools/companion/`) watches the
+  *program source* (host audio, optionally a screen region) and streams 30-byte
+  `SceneFrame` UDP packets (multicast `239.255.42.11:9772`). The ESP32 fuses
+  that with its own on-device audio analysis.
+- **Pure layer (`src/cinema/`, host-testable):** `SceneFrame.h` (packed codec),
+  `CinematicConfig.h` (5 presets, 2 genre overlays, clamped knobs),
+  `SceneAnalyzer.h` (boom/impact cooldowns, whisper/silence/dialogue/tension),
+  `CinematicEngine.h` (scene+event envelopes, video smoothing, `Look`),
+  `CinematicApply.h` (multiplies the look onto the theme frame).
+- **Transport:** `SceneLinkNode` — receive-only UDP multicast task (core 0,
+  mutex-guarded latest-frame copy, stale fallback). The ESP32 never transmits
+  SceneFrames.
+- **Safety-first:** the engine output is only ever *multiplied* onto the theme
+  frame and capped by `maxBrightness`/theme brightness; sustained-loud content
+  is cooldown-gated (no strobe); a dead companion falls back to pure on-device
+  audio within `staleMs`; the whole mode is off by default and costs nothing
+  when disabled.
+- **Surfaces:** `GET/POST /api/cinematic`, a Cinematic web tab, and a compact
+  LVGL Cine screen — all driven by the same `Config`/`Status`.
+
+---
+
 ## 19. Web dashboard architecture (TypeScript + React)
 
 Full details: `docs/WEB_DASHBOARD.md`. Summary:
@@ -873,6 +899,7 @@ G:\LED project\
 │   │   ├── effects\            Effect|LedFrame|EffectParams|EffectRegistry|fx\…
 │   │   ├── config\             ConfigDefs|Config|ConfigStore|ConfigDefaults
 │   │   ├── network\            (Ph4) wifi, AP/STA, REST api, SSE stream
+│   │   ├── cinema\             SceneFrame codec, CinematicConfig, SceneAnalyzer, CinematicEngine, CinematicApply, SceneLinkNode (Phase 13)
 │   │   ├── system\             (Ph4+) diag, memory/cpu, ota
 │   │   └── runtime\            StripRuntime, App, AudioFrame pub/sub
 │   ├── data\                   LittleFS: web assets + default config.json
@@ -882,6 +909,7 @@ G:\LED project\
 │   ├── mockDevPlugin.ts        Vite dev-server mock of the firmware /api surface
 │   └── dist\                   build output → firmware/data
 ├── tools\python\               audio-analysis lab, simulators, power_calculator
+├── tools\companion\            Cinematic reference companion (Python, lazy deps, --sim)
 └── hardware\                   (later) PCB, enclosures, schematics
 ```
 

@@ -56,7 +56,7 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   smoothly over `themeTransitionMs` (default 500 ms) instead of snapping; `0`
   restores the legacy instant switch.
 - **Touchscreen UI** — optional LVGL GUI on a TFT panel (reference: 3.5″
-  SPI ILI9488 + FT6236 capacitive touch). Now / Themes / System screens,
+  SPI ILI9488 + FT6236 capacitive touch). Now / Themes / Cine / System screens,
   screen timeout that never affects the LEDs, hardware-independent
   display/touch abstraction, build via the `esp32-s3-ui` PlatformIO env.
 - **LED drivers (interchangeable)**:
@@ -84,6 +84,13 @@ Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
   runs the mic and broadcasts its analysis; *slaves* (no mic needed) render
   the identical frame with clock-offset + frame-counter lock, so whole rooms
   of strips stay beat-locked over plain WiFi. See `docs/MULTI_CONTROLLER.md`.
+- **Cinematic Mode** — movie/TV scene-reactive lighting. A PC companion
+  (`tools/companion/`) watches the program source (host audio, optional screen
+  region) and streams 30-byte `SceneFrame` packets over UDP multicast; the ESP32
+  fuses that with its own mic analysis and *multiplies* a subtle look onto the
+  theme (scene/event envelopes, cooldown-gated booms — no strobe, companion
+  dead → automatic audio-only fallback). Off by default; web Cinematic tab,
+  LVGL Cine screen and `GET/POST /api/cinematic`. See `docs/CINEMATIC.md`.
 
 See `docs/ARCHITECTURE.md` for the full design.
 
@@ -94,6 +101,7 @@ See `docs/ARCHITECTURE.md` for the full design.
 /firmware      ESP32-S3 firmware (PlatformIO, C++/Arduino) — Phase 1
 /web          web dashboard (Vite + React + TypeScript) — Phase 4
 /tools/python  audio-analysis lab + power calculator (dev tooling)
+/tools/companion  cinematic reference companion (Python, optional deps)
 ```
 
 ## Prerequisites
@@ -191,6 +199,10 @@ from any device on the same network:
 - **System** — status readouts, panel backlight + timeout, **Restart** and
   **Safe Power Off** (clean shutdown that silences outputs, saves config and
   deep-sleeps the device; see `docs/SYSTEM.md`).
+- **Cinematic** — on/off, five reaction presets + genre overlay, live knobs
+  (debounced, no reboot), companion multicast link, and a live status panel
+  (scene/event, luminance/motion/prog-audio, boom/tension, companion-alive
+  indicator). See `docs/CINEMATIC.md`.
 - **Firmware Update** — upload a `firmware.bin` over the air (HTTP) or flash
   from the Arduino IDE (ArduinoOTA is active too).
 
@@ -201,10 +213,11 @@ either surface can drive the other. See `docs/WEB_DASHBOARD.md`.
 ### Touchscreen (optional)
 
 Build with the `esp32-s3-ui` PlatformIO env to link LVGL and enable the
-display/touch drivers. Three screens — **Now** (theme + spectrum + beat),
-**Themes** (one-tap theme selection, same state as web) and **System**
-(master + screen brightness, timeout cycle, status line, **Restart** and
-**Safe Power Off** behind confirmation overlays). Screen brightness and
+display/touch drivers. Four screens — **Now** (theme + spectrum + beat),
+**Themes** (one-tap theme selection, same state as web), **Cine** (cinematic
+toggle, preset cycle, live status — same config as the web Cinematic tab) and
+**System** (master + screen brightness, timeout cycle, status line, **Restart**
+and **Safe Power Off** behind confirmation overlays). Screen brightness and
 timeout are configured live from either surface (`display` block in
 `config.json`) and are fully independent of LED output. See
 `docs/TOUCHSCREEN.md`.
@@ -248,7 +261,8 @@ bass/mid/treble, beat, free heap).
 
 - `pio test -e native` — **host-side unit tests** for the pure logic (colour
   math, palettes, smoothing, effect rendering, LED frame ops, device
-  classification registry, source auto-select, theme blending); runs in CI.
+  classification registry, source auto-select, theme blending, cinematic
+  codec/engine — 105 tests across 5 suites); runs in CI.
 - `python tools/python/analyze.py song.mp3` — replicate the band/beat pipeline
   in NumPy; produces waveform/spectrum/band/beat/LED-sim visualizations
   (`docs/TESTING.md`).
@@ -256,6 +270,9 @@ bass/mid/treble, beat, free heap).
   (`docs/HARDWARE.md §4`).
 - `cd web && npm run dev` — dashboard **simulator** (mock `/api` endpoints,
   no hardware required).
+- `python tools/companion/resonux_companion.py --once --sim` — send simulated
+  SceneFrames over the LAN with zero third-party dependencies
+  (`docs/CINEMATIC.md`).
 
 ## Documentation
 
@@ -269,6 +286,7 @@ bass/mid/treble, beat, free heap).
 - `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
 - `docs/PRODUCTISATION.md` — carrier PCB + enclosure + CE (Phase 10)
 - `docs/SYSTEM.md` — system controls: restart, safe power-off, display control
+- `docs/CINEMATIC.md` — cinematic mode: design, wire protocol, companion usage
 - `docs/BENCH.md` — hardware bring-up checklist (turnkey steps when parts land)
 - `docs/ROADMAP.md` — phase plan & status
 
@@ -290,9 +308,13 @@ hints, and a manual-identify path for devices discovery can't name),
 trusted device enables them; the dashboard explains the active source's reason
 at boot), **multi-source audio selection**
 (mic / test tone / none with boot auto-select), **theme cross-fades**, **host-side
-unit tests in CI** (84 pass), and the **LVGL touchscreen UI**
+unit tests in CI** (105 pass), **cinematic mode** (on-device mic analysis fused
+with a companion `SceneFrame` feed over UDP multicast, multiplying a subtle
+look onto the theme with cooldown-gated booms and a dead-companion audio-only
+fallback; web Cinematic tab, LVGL Cine screen and live `/api/cinematic`
+endpoints) and the **LVGL touchscreen UI**
 (hardware-independent display/touch abstraction) are implemented and compile
-cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~64 %
+cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~65 %
 flash with the touchscreen env); hardware bring-up is pending parts arrival
 (see `docs/HARDWARE.md`).
 

@@ -3,6 +3,8 @@
 #include "audio/AudioAnalyzer.h"
 #include "audio/AudioFrame.h"
 #include "audio/AudioSource.h"
+#include "cinema/CinematicEngine.h"
+#include "cinema/SceneAnalyzer.h"
 #include "device/DeviceManager.h"
 #include "config/Config.h"
 #include "display/DisplayManager.h"
@@ -16,6 +18,7 @@
 
 class WebUi;
 class SyncNode;
+class SceneLinkNode;
 
 class App {
 public:
@@ -57,6 +60,13 @@ public:
   bool setDisplayBacklightPct(int pct);    // 0-100, live + persists (no reboot)
   bool setDisplayTimeout(int seconds);     // 0 = always on, live + persists
 
+  // ---- Cinematic Mode ----------------------------------------------------
+  const cine::Status& cinematicStatus() const { return _cinStatus; }
+  const cine::Look& cinematicLook() const { return _cinEngine.look(); }
+  bool cinematicActive() const { return _config.cinematic.enabled; }
+  bool cameraUdpLive() const;              // companion feed fresh right now
+  bool setCinematicConfig(const cine::Config& c);  // clamps, persists, applies
+
 private:
   App() {}
   App(const App&) = delete;
@@ -90,6 +100,11 @@ private:
   ArtNetNode*     _artnet = nullptr;
   SyncNode*       _sync = nullptr;
   WebUi*          _web = nullptr;
+
+  cine::CinematicEngine _cinEngine;        // fusion core (pure, task-safe)
+  cine::SceneAnalyzer   _cinAnalyzer;      // local audio -> cinematic features
+  cine::Status          _cinStatus;
+  SceneLinkNode*        _sceneLink = nullptr;  // companion SceneFrame receiver
 
   sys::SystemMode _sysMode;
   TaskHandle_t    _shutdownTask = nullptr;

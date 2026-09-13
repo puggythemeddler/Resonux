@@ -151,7 +151,63 @@ type StateT = {
   themeCount: number
 }
 
-type Tab = 'live' | 'themes' | 'devices' | 'config' | 'system' | 'ota'
+type Tab = 'live' | 'themes' | 'devices' | 'config' | 'system' | 'ota' | 'cinema'
+
+type CinematicConfig = {
+  enabled: boolean
+  mode: number
+  modeId?: string
+  modeLabel?: string
+  genre: number
+  genreId?: string
+  genreLabel?: string
+  sensitivity: number
+  reaction: number
+  visualInfluence: number
+  audioInfluence: number
+  colorInfluence: number
+  speed: number
+  smoothing: number
+  flashIntensity: number
+  flashDurationMs: number
+  flashMinGapMs: number
+  boomCooldownMs: number
+  whisperDim: number
+  maxBrightness: number
+  ambientFloor: number
+  receiveUdp: boolean
+  group: string
+  port: number
+  staleMs: number
+}
+
+type CinematicStatus = {
+  source: number
+  scene: number
+  sceneId: string
+  event: number
+  eventId: string
+  eventConfidence: number
+  sceneConfidence: number
+  luminance: number
+  motion: number
+  progAudio: number
+  hue: number
+  sat: number
+  val: number
+  audioLevel: number
+  boom: number
+  tension: number
+  lastFrameMs: number
+}
+
+type CinematicData = {
+  ok: boolean
+  config: CinematicConfig
+  active: boolean
+  companionAlive: boolean
+  status: CinematicStatus
+}
 
 const baseBrightness = (t: Theme) =>
   typeof t.brightness === 'object' ? t.brightness.base : t.brightness
@@ -323,6 +379,198 @@ function ConfiguredJsonPreview({ config }: { config: AnyConfig }) {
   )
 }
 
+const CINE_PRESETS: Array<Partial<CinematicConfig>> = [
+  { reaction: 0.45, visualInfluence: 0.5, audioInfluence: 0.3, colorInfluence: 0.8, speed: 0.3, flashIntensity: 0.35, whisperDim: 0.35, smoothing: 0.6, flashDurationMs: 200, flashMinGapMs: 120, boomCooldownMs: 600 },
+  { reaction: 0.8, visualInfluence: 0.7, audioInfluence: 0.5, colorInfluence: 1, speed: 0.5, flashIntensity: 0.6, whisperDim: 0.55, smoothing: 0.4, flashDurationMs: 180, flashMinGapMs: 90, boomCooldownMs: 450 },
+  { reaction: 0.95, visualInfluence: 0.85, audioInfluence: 0.65, colorInfluence: 1.1, speed: 0.65, flashIntensity: 0.75, whisperDim: 0.7, smoothing: 0.45, flashDurationMs: 220, flashMinGapMs: 110, boomCooldownMs: 500 },
+  { reaction: 1, visualInfluence: 0.8, audioInfluence: 0.85, colorInfluence: 1.2, speed: 0.85, flashIntensity: 0.9, whisperDim: 0.8, smoothing: 0.3, flashDurationMs: 200, flashMinGapMs: 80, boomCooldownMs: 400 },
+  { reaction: 1.25, visualInfluence: 0.9, audioInfluence: 1, colorInfluence: 1.3, speed: 1, flashIntensity: 1, whisperDim: 0.9, smoothing: 0.25, flashDurationMs: 240, flashMinGapMs: 60, boomCooldownMs: 320 },
+]
+const CINE_MODE_LABELS = ['Subtle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
+const CINE_GENRES = [
+  { label: 'None', value: 0 },
+  { label: 'Horror', value: 1 },
+  { label: 'Anime', value: 2 },
+]
+
+function CinematicPanel({ data, err, onPatch, onReload }: {
+  data: CinematicData
+  err: string
+  onPatch: (patch: Record<string, unknown>) => void
+  onReload: () => void
+}) {
+  const [draft, setDraft] = useState<CinematicConfig>(() => data.config)
+  const timers = useRef<Record<string, number>>({})
+
+  const debounce = (key: string, value: unknown, ms: number) => {
+    if (timers.current[key] !== undefined) window.clearTimeout(timers.current[key])
+    timers.current[key] = window.setTimeout(() => onPatch({ [key]: value }), ms)
+  }
+  const knob = (key: string, value: number, match: keyof CinematicConfig) => {
+    setDraft((d) => ({ ...d, [match]: value }))
+    debounce(key, value, 220)
+  }
+  const setInt = (key: keyof CinematicConfig, raw: string | number) => {
+    const v = Math.round(Number(raw))
+    if (Number.isNaN(v)) return
+    setDraft((d) => ({ ...d, [key]: v }))
+    debounce(String(key), v, 400)
+  }
+  const toggle = (key: keyof CinematicConfig, value: boolean) => {
+    setDraft((d) => ({ ...d, [key]: value }))
+    onPatch({ [key]: value })
+  }
+  const setField = (key: keyof CinematicConfig, value: unknown) => {
+    setDraft((d) => ({ ...d, [key]: value }))
+    onPatch({ [key]: value })
+  }
+  const pickMode = (m: number) => {
+    setDraft((d) => ({ ...d, ...CINE_PRESETS[m], mode: m, modeLabel: CINE_MODE_LABELS[m] }))
+    onPatch({ applyPreset: true, mode: m })
+  }
+
+  const c = draft
+  const s = data.status
+  const fields: Array<{ key: keyof CinematicConfig; label: string; min: number; max: number; step: number; hint?: string }> = [
+    { key: 'sensitivity', label: 'Audio sensitivity', min: 0.25, max: 3, step: 0.05 },
+    { key: 'reaction', label: 'Reaction strength', min: 0, max: 1.5, step: 0.05 },
+    { key: 'visualInfluence', label: 'Scene (video) influence', min: 0, max: 1, step: 0.05 },
+    { key: 'audioInfluence', label: 'On-device audio influence', min: 0, max: 1, step: 0.05 },
+    { key: 'colorInfluence', label: 'Dominant-colour pull', min: 0, max: 2, step: 0.05 },
+    { key: 'speed', label: 'Motion speed', min: 0, max: 1, step: 0.05 },
+    { key: 'smoothing', label: 'Smoothing (1 = sticky)', min: 0, max: 1, step: 0.05 },
+    { key: 'flashIntensity', label: 'Flash intensity', min: 0, max: 1, step: 0.05 },
+    { key: 'whisperDim', label: 'Whisper dim', min: 0, max: 1, step: 0.05 },
+    { key: 'maxBrightness', label: 'Max brightness', min: 0, max: 1, step: 0.05 },
+    { key: 'ambientFloor', label: 'Ambient floor', min: 0, max: 0.5, step: 0.01, hint: 'Minimum brightness in near-black scenes.' },
+  ]
+
+  return (
+    <div className="grid">
+      <div className="card">
+        <div className="row">
+          <h3 style={{ margin: 0 }}>Cinematic Mode</h3>
+          <div className="actions" style={{ margin: 0 }}>
+            <button onClick={onReload}>Reload</button>
+            <button className={c.enabled ? 'primary' : undefined} onClick={() => toggle('enabled', !c.enabled)}>
+              {c.enabled ? '✓ On' : 'Off'}
+            </button>
+          </div>
+        </div>
+        <p className="muted">
+          Movie &amp; TV scene-reactive lighting. The companion app feeds live scene/event frames
+          (UDP multicast); the controller blends them with its own on-device audio analysis. With no
+          companion present it runs on device audio alone.
+        </p>
+        {err && <div className="err">{err}</div>}
+
+        <h4>Reaction preset</h4>
+        <div className="caps-cell">
+          {CINE_MODE_LABELS.map((l, i) => (
+            <button key={l} className={`chip-btn ${c.mode === i ? 'on' : ''}`} onClick={() => pickMode(i)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <label>Genre overlay</label>
+          <select value={c.genre} onChange={(e) => setField('genre', Number(e.target.value))}>
+            {CINE_GENRES.map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <h4 style={{ marginTop: 12 }}>Reaction tuning</h4>
+        {fields.map((f) => (
+          <FieldSlider
+            key={f.key}
+            label={f.label}
+            value={Number(c[f.key])}
+            min={f.min}
+            max={f.max}
+            step={f.step}
+            onChange={(v) => knob(String(f.key), v, f.key)}
+          />
+        ))}
+        {fields.some((f) => f.hint) && <p className="muted">{fields.find((f) => f.key === 'ambientFloor')?.hint}</p>}
+        <p className="muted">Knobs apply instantly over the live endpoint — no flash write, no reboot.</p>
+      </div>
+
+      <div className="card">
+        <h3>Live status</h3>
+        <div className="status-line">
+          <span className={`dot ${data.active ? 'beat' : ''}`} />
+          <span>{data.active ? 'reacting to content' : 'off'}</span>
+          <span style={{ marginLeft: 'auto' }}>{data.companionAlive ? 'companion feed live' : 'device audio only'}</span>
+        </div>
+        <div className="stat-row">
+          <div className="stat"><div className="val">{s.sceneId}</div><div className="lbl">Scene</div></div>
+          <div className="stat"><div className="val">{s.eventId}</div><div className="lbl">Event</div></div>
+          <div className="stat"><div className="val">{s.eventConfidence}%</div><div className="lbl">Confidence</div></div>
+          <div className="stat"><div className="val">{s.lastFrameMs} ms</div><div className="lbl">Frame lag</div></div>
+        </div>
+        <div className="stat-row">
+          <div className="stat"><div className="val">{s.luminance}</div><div className="lbl">Luminance</div></div>
+          <div className="stat"><div className="val">{s.motion}</div><div className="lbl">Motion</div></div>
+          <div className="stat"><div className="val">{s.progAudio}</div><div className="lbl">Prog audio</div></div>
+          <div className="stat"><div className="val">{(s.audioLevel ?? 0).toFixed(2)}</div><div className="lbl">Amp</div></div>
+        </div>
+        <div className="stat-row">
+          <div className="stat"><div className="val">{(s.boom ?? 0).toFixed(2)}</div><div className="lbl">Boom</div></div>
+          <div className="stat"><div className="val">{(s.tension ?? 0).toFixed(2)}</div><div className="lbl">Tension</div></div>
+          <div className="stat"><div className="val">{s.hue}</div><div className="lbl">Dominant hue</div></div>
+          <div className="stat"><div className="val">{s.sat}</div><div className="lbl">Sat</div></div>
+        </div>
+        <p className="muted">
+          Boom/flash envelopes are cooldown-gated so loud music can never strobe; if the companion goes
+          silent the controller falls back to its own audio analysis.
+        </p>
+
+        <h4>Companion link (SceneFrame UDP)</h4>
+        <div className="row">
+          <label>Receive companion frames</label>
+          <input type="checkbox" checked={c.receiveUdp} onChange={(e) => toggle('receiveUdp', e.target.checked)} />
+        </div>
+        <div className="row">
+          <label>Multicast group</label>
+          <input type="text" value={c.group} spellCheck={false}
+            onChange={(e) => { setDraft((d) => ({ ...d, group: e.target.value })); debounce('group', e.target.value, 500) }} />
+        </div>
+        <div className="row">
+          <label>Port</label>
+          <input type="number" min={1024} max={65535} value={c.port}
+            onChange={(e) => setInt('port', e.target.value)} />
+        </div>
+        <div className="row">
+          <label>Stale after (ms)</label>
+          <input type="number" min={100} max={10000} step={100} value={c.staleMs}
+            onChange={(e) => setInt('staleMs', e.target.value)} />
+        </div>
+        <div className="row">
+          <label>Flash hold (ms)</label>
+          <input type="number" min={30} max={1000} value={c.flashDurationMs}
+            onChange={(e) => setInt('flashDurationMs', e.target.value)} />
+        </div>
+        <div className="row">
+          <label>Flash min gap (ms)</label>
+          <input type="number" min={20} max={1000} value={c.flashMinGapMs}
+            onChange={(e) => setInt('flashMinGapMs', e.target.value)} />
+        </div>
+        <div className="row">
+          <label>Boom cooldown (ms)</label>
+          <input type="number" min={50} max={2000} value={c.boomCooldownMs}
+            onChange={(e) => setInt('boomCooldownMs', e.target.value)} />
+        </div>
+        <p className="muted">
+          The device groups with <code>239.255.42.11:9772</code>. Restart the app on the controller after
+          changing the multicast address or port.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('live')
   const [status, setStatus] = useState<Status | null>(null)
@@ -362,6 +610,8 @@ export default function App() {
   const [manualCond, setManualCond] = useState(false)
   const [audio, setAudio] = useState<AudioSourcesData | null>(null)
   const [audioMsg, setAudioMsg] = useState('')
+  const [cine, setCine] = useState<CinematicData | null>(null)
+  const [cineErr, setCineErr] = useState('')
 
   const poll = useCallback(async () => {
     try {
@@ -703,6 +953,41 @@ export default function App() {
     loadAudio()
   }, [tab, loadDevices, loadAudio])
 
+  const loadCinematic = useCallback(async () => {
+    try {
+      const r = await fetch('/api/cinematic')
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      setCine((await r.json()) as CinematicData)
+      setCineErr('')
+    } catch (e) {
+      setCineErr((e as Error).message)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== 'cinema') return
+    loadCinematic()
+    const id = setInterval(loadCinematic, 500)
+    return () => clearInterval(id)
+  }, [tab, loadCinematic])
+
+  const saveCine = async (patch: Record<string, unknown>) => {
+    try {
+      const r = await fetch('/api/cinematic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setCineErr('')
+    } catch (e) {
+      setCineErr((e as Error).message)
+    }
+  }
+
   const openTheme = (t: Theme) => {
     const r = t.response ?? DEFAULT_RESP
     const an = t.animation ?? DEFAULT_ANIM
@@ -884,9 +1169,9 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        {(['live', 'themes', 'devices', 'config', 'system', 'ota'] as Tab[]).map((t) => (
+        {(['live', 'themes', 'devices', 'config', 'system', 'cinema', 'ota'] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'devices' ? 'Devices & Sources' : t === 'config' ? 'Configuration' : t === 'system' ? 'System' : 'Firmware Update'}
+            {t === 'live' ? 'Live' : t === 'themes' ? 'Themes' : t === 'devices' ? 'Devices & Sources' : t === 'config' ? 'Configuration' : t === 'system' ? 'System' : t === 'cinema' ? 'Cinematic' : 'Firmware Update'}
           </button>
         ))}
       </nav>
@@ -1310,6 +1595,22 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {tab === 'cinema' && (
+        cine ? (
+          <CinematicPanel
+            data={cine}
+            err={cineErr}
+            onPatch={saveCine}
+            onReload={loadCinematic}
+          />
+        ) : (
+          <div className="card">
+            <h3>Cinematic Mode</h3>
+            {cineErr ? <div className="err">{cineErr}</div> : <p className="muted">Loading…</p>}
+          </div>
+        )
       )}
 
       {tab === 'system' && (

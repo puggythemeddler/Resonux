@@ -289,6 +289,46 @@ export default function mockDevPlugin(): Plugin {
   let mockTimeout = 60
   let mockSensitivity = 0.5
 
+  // ---- cinematic mode sim ---------------------------------------------------
+  const CINE_PRESETS = [
+    // subtle
+    { reaction: 0.45, visualInfluence: 0.5, audioInfluence: 0.3, colorInfluence: 0.8, speed: 0.3, flashIntensity: 0.35, whisperDim: 0.35, smoothing: 0.6, flashDurationMs: 200, flashMinGapMs: 120, boomCooldownMs: 600 },
+    // balanced
+    { reaction: 0.8, visualInfluence: 0.7, audioInfluence: 0.5, colorInfluence: 1, speed: 0.5, flashIntensity: 0.6, whisperDim: 0.55, smoothing: 0.4, flashDurationMs: 180, flashMinGapMs: 90, boomCooldownMs: 450 },
+    // immersive
+    { reaction: 0.95, visualInfluence: 0.85, audioInfluence: 0.65, colorInfluence: 1.1, speed: 0.65, flashIntensity: 0.75, whisperDim: 0.7, smoothing: 0.45, flashDurationMs: 220, flashMinGapMs: 110, boomCooldownMs: 500 },
+    // dynamic
+    { reaction: 1, visualInfluence: 0.8, audioInfluence: 0.85, colorInfluence: 1.2, speed: 0.85, flashIntensity: 0.9, whisperDim: 0.8, smoothing: 0.3, flashDurationMs: 200, flashMinGapMs: 80, boomCooldownMs: 400 },
+    // extreme
+    { reaction: 1.25, visualInfluence: 0.9, audioInfluence: 1, colorInfluence: 1.3, speed: 1, flashIntensity: 1, whisperDim: 0.9, smoothing: 0.25, flashDurationMs: 240, flashMinGapMs: 60, boomCooldownMs: 320 },
+  ]
+  const CINE_MODE_LABELS = ['Subtle', 'Balanced', 'Immersive', 'Dynamic', 'Extreme']
+  const CINE_MODE_IDENTS = ['subtle', 'balanced', 'immersive', 'dynamic', 'extreme']
+  const CINE_GENRES = [
+    { id: 'none', label: 'None', value: 0 },
+    { id: 'horror', label: 'Horror', value: 1 },
+    { id: 'anime', label: 'Anime', value: 2 },
+  ]
+  const CINE_SCENES = [
+    { key: 'speech', label: 'Speech' }, { key: 'quiet', label: 'Quiet' },
+    { key: 'action', label: 'Action' }, { key: 'chase', label: 'Chase' },
+    { key: 'explosion', label: 'Explosion' }, { key: 'music', label: 'Music' },
+  ]
+  const CINE_EVENTS = [
+    { key: 'none', label: 'None' }, { key: 'whisper', label: 'Whisper' },
+    { key: 'flash', label: 'Flash' }, { key: 'boom', label: 'Boom' },
+    { key: 'dark', label: 'Dark' }, { key: 'change', label: 'Change' },
+  ]
+  let cineConfig: Record<string, unknown> = {
+    enabled: true, mode: 1, genre: 0, sensitivity: 1, reaction: 0.8,
+    visualInfluence: 0.7, audioInfluence: 0.5, colorInfluence: 1, speed: 0.5,
+    smoothing: 0.4, flashIntensity: 0.6, flashDurationMs: 180,
+    flashMinGapMs: 90, boomCooldownMs: 450, whisperDim: 0.55, maxBrightness: 1,
+    ambientFloor: 0.06, receiveUdp: true, group: '239.255.42.11', port: 9772,
+    staleMs: 1200,
+  }
+  let cineSeq = 1
+
   // ---- device registry + audio source sim ----------------------------------
   const SOURCES = [
     { id: 0, ident: 'none', label: 'No input' },
@@ -314,7 +354,7 @@ export default function mockDevPlugin(): Plugin {
   ]
 
   // Capability ids in bit order (bit i == CAP table index i).
-  const CAP_ORDER = ['audio_input', 'audio_output', 'microphone', 'line_in', 'usb_audio', 'bluetooth_audio', 'network_audio', 'led_output', 'addressable_led', 'rgb_pwm', 'dmx', 'artnet', 'serial', 'i2c', 'spi', 'display', 'touch', 'network', 'storage']
+  const CAP_ORDER = ['audio_input', 'audio_output', 'microphone', 'line_in', 'usb_audio', 'bluetooth_audio', 'network_audio', 'led_output', 'addressable_led', 'rgb_pwm', 'dmx', 'artnet', 'serial', 'i2c', 'spi', 'display', 'touch', 'network', 'storage', 'screen_capture', 'video_input', 'hdmi_capture', 'system_audio']
   const CONN_CATALOG = [
     { id: 'wifi', label: 'Wi-Fi' }, { id: 'ethernet', label: 'Ethernet' },
     { id: 'bluetooth', label: 'Bluetooth' }, { id: 'usb', label: 'USB' },
@@ -324,6 +364,7 @@ export default function mockDevPlugin(): Plugin {
     { id: 'spi', label: 'SPI' }, { id: 'dmx', label: 'DMX' },
     { id: 'serial', label: 'Serial' }, { id: 'artnet', label: 'Art-Net UDP' },
     { id: 'sync', label: 'Sync UDP' }, { id: 'network', label: 'Network' },
+    { id: 'scene_udp', label: 'Scene feed UDP' },
   ]
   const capMask = (ids: string[]) => ids.reduce((acc, id) => acc + (1 << (CAP_ORDER.indexOf(id) < 0 ? -1 : CAP_ORDER.indexOf(id))), 0)
   const conflict = (d) => {
@@ -847,6 +888,67 @@ export default function mockDevPlugin(): Plugin {
             mockTimeout = Math.round(v)
             json(res, 200, { ok: true, timeoutS: mockTimeout })
           })
+          return
+        }
+
+        if (url === '/api/cinematic') {
+          if (req.method === 'GET') {
+            const t = Date.now() / 1000
+            const mode = Number(cineConfig.mode)
+            const sceneI = Math.floor(t / 6) % CINE_SCENES.length
+            const scene = CINE_SCENES[sceneI]
+            const eventI = (Math.floor(t / 1.3) + 2) % CINE_EVENTS.length
+            const event = CINE_EVENTS[eventI]
+            json(res, 200, {
+              ok: true,
+              config: { ...cineConfig, modeLabel: CINE_MODE_LABELS[mode], modeId: CINE_MODE_IDENTS[mode] },
+              active: Boolean(cineConfig.enabled),
+              companionAlive: true,
+              status: {
+                source: 2,
+                scene: sceneI + 1,
+                sceneId: scene.key,
+                event: eventI,
+                eventId: event.key,
+                eventConfidence: 40 + Math.floor(Math.random() * 60),
+                sceneConfidence: 55 + Math.floor(Math.random() * 45),
+                luminance: Math.floor(80 + 60 * Math.sin(t)),
+                motion: Math.floor(30 + 50 * Math.abs(Math.sin(t / 1.7))),
+                progAudio: Math.floor(50 + 40 * Math.sin(t / 0.9)),
+                hue: Math.floor((1 + Math.sin(t / 2)) * 127),
+                sat: 180 + Math.floor(Math.random() * 60),
+                val: 200 + Math.floor(Math.random() * 40),
+                audioLevel: 0.3 + Math.random() * 0.4,
+                boom: Math.random() < 0.12 ? 0.8 + Math.random() * 0.2 : 0,
+                tension: Math.random() * 0.4,
+                lastFrameMs: 30 + Math.floor(Math.random() * 60),
+              },
+            })
+            return
+          }
+          if (req.method === 'POST') {
+            readJson((body) => {
+              if (body.applyPreset === true) {
+                const mode = Number(body.mode)
+                const p = CINE_PRESETS[mode]
+                if (p) {
+                  cineConfig = { ...cineConfig, ...p, mode }
+                }
+              }
+              const floats = ['sensitivity', 'reaction', 'visualInfluence', 'audioInfluence', 'colorInfluence', 'speed', 'smoothing', 'flashIntensity', 'whisperDim', 'maxBrightness', 'ambientFloor']
+              const ints = ['flashDurationMs', 'flashMinGapMs', 'boomCooldownMs', 'port', 'staleMs']
+              for (const k of floats) if (typeof body[k] === 'number') cineConfig[k] = body[k]
+              for (const k of ints) if (typeof body[k] === 'number') cineConfig[k] = Math.round(Number(body[k]))
+              if (typeof body.enabled === 'boolean') cineConfig.enabled = body.enabled
+              if (typeof body.mode === 'number' && body.applyPreset !== true) cineConfig.mode = Math.round(Number(body.mode)) % 5
+              if (typeof body.genre === 'number') cineConfig.genre = Math.round(Number(body.genre)) % 3
+              if (typeof body.receiveUdp === 'boolean') cineConfig.receiveUdp = body.receiveUdp
+              if (typeof body.group === 'string' && body.group) cineConfig.group = body.group
+              json(res, 200, { ok: true, seq: cineSeq++ })
+            })
+            return
+          }
+          json(res, 405, { ok: false, error: 'method not allowed' })
           return
         }
 
