@@ -8,6 +8,8 @@
 #include "cinema/SceneAnalyzer.h"
 #include "cinema/SceneFrame.h"
 #include "cinema/SceneMemory.h"
+#include "cinema/SpatialBlock.h"
+#include "cinema/SpatialWaveField.h"
 
 using namespace cine;
 using namespace sceneframe;
@@ -724,6 +726,277 @@ void test_engine_status_exposes_intent() {
   TEST_ASSERT(eng.status().recentEvents >= 1);
 }
 
+// ------------------------------------------------------- spatial block codec
+void test_spatial_block_roundtrip() {
+  SpatialInfo si;
+  si.focusX = 60;
+  si.focusY = 200;
+  si.zoneCount = 3;
+  si.zones[0] = SpatialInfo::Zone{ZONE_LEFT, 40};
+  si.zones[1] = SpatialInfo::Zone{ZONE_CENTER, 35};
+  si.zones[2] = SpatialInfo::Zone{ZONE_FULLSCREEN, 90};
+
+  uint8_t buf[sceneframe::kSpatialMaxBlock];
+  const size_t total = packSpatial(buf, sizeof(buf), si);
+
+  // 3 header + 2 focus + 6 zone bytes
+  TEST_ASSERT_EQUAL_UINT32(11u, (uint32_t)total);
+  TEST_ASSERT_EQUAL_UINT8(kSpatialMagic0, buf[0]);
+  TEST_ASSERT_EQUAL_UINT8(kSpatialMagic1, buf[1]);
+  TEST_ASSERT_EQUAL_UINT8(8u, buf[2]);  // blockLen = 2 + 2*3
+
+  SpatialInfo out;
+  TEST_ASSERT_TRUE(parseSpatial(buf, total, out));
+  TEST_ASSERT_EQUAL_UINT8(60u, out.focusX);
+  TEST_ASSERT_EQUAL_UINT8(200u, out.focusY);
+  TEST_ASSERT_EQUAL_UINT8(3u, out.zoneCount);
+  TEST_ASSERT_EQUAL_UINT8(ZONE_LEFT, out.zones[0].zone);
+  TEST_ASSERT_EQUAL_UINT8(40u, out.zones[0].confidence);
+  TEST_ASSERT_EQUAL_UINT8(ZONE_FULLSCREEN, out.zones[2].zone);
+  TEST_ASSERT_EQUAL_UINT8(90u, out.zones[2].confidence);
+}
+
+void test_spatial_block_rides_an_overlong_frame() {
+  Frame f;
+  packFrame(f, 42u, 7u, SCENE_ACTION, SEVENT_BOOM, 80, 200, 40, 180, 180, 220,
+            128, 0, SFLAG_SPATIAL_BLOCK);
+
+  SpatialInfo si;
+  si.focusX = 255;
+  si.focusY = 0;
+  si.zoneCount = 1;
+  si.zones[0] = SpatialInfo::Zone{ZONE_RIGHT, 75};
+  uint8_t block[sceneframe::kSpatialMaxBlock];
+  const size_t blen = packSpatial(block, sizeof(block), si);
+
+  uint8_t wire[sceneframe::kSpatialMaxBlock + sizeof(sceneframe::Frame)];
+  memcpy(wire, &f, sizeof(f));
+  memcpy(wire + sizeof(f), block, blen);
+  const size_t total = sizeof(f) + blen;
+
+  // the base frame stays valid (over-long payloads are accepted) ...
+  TEST_ASSERT_TRUE(validFrame(f, total));
+  // ... and the block parses right after the base struct
+  SpatialInfo out;
+  TEST_ASSERT_TRUE(parseSpatial(wire + sizeof(f), blen, out));
+  TEST_ASSERT_EQUAL_UINT8(255u, out.focusX);
+  TEST_ASSERT_EQUAL_UINT8(ZONE_RIGHT, out.zones[0].zone);
+}
+
+void test_spatial_block_rejects_malformed() {
+  uint8_t buf[sceneframe::kSpatialMaxBlock] = {0};
+  SpatialInfo si;
+  si.focusX = 100;
+  si.focusY = 100;
+  si.zoneCount = 2;
+  packSpatial(buf, sizeof(buf), si);
+  SpatialInfo out;
+
+  // bad magic
+  uint8_t bad[sceneframe::kSpatialMaxBlock];
+  memcpy(bad, buf, sizeof(buf));
+  bad[0] = 'X';
+  TEST_ASSERT_FALSE(parseSpatial(bad, sizeof(bad), out));
+  // truncated (fewer bytes than the block needs)
+  TEST_ASSERT_FALSE(parseSpatial(buf, 4, out));  // len=6 needs 6 avail
+  // odd blockLen
+  memcpy(bad, buf, sizeof(buf));
+  bad[2] = 5;
+  TEST_ASSERT_FALSE(parseSpatial(bad, sizeof(bad), out));
+  // oversized blockLen
+  bad[2] = 2 + 2 * (kSpatialMaxEntries + 1);
+  TEST_ASSERT_FALSE(parseSpatial(bad, sizeof(bad), out));
+  // unknown zone id inside the pairs
+  memcpy(bad, buf, sizeof(buf));
+  bad[2] = 4;  // one entry
+  bad[5] = (uint8_t)(ZONE_COUNT + 3);
+  TEST_ASSERT_FALSE(parseSpatial(bad, 7, out));
+  // empty zero-length block is also malformed (need at least focus bytes)
+  memcpy(bad, buf, sizeof(buf));
+  bad[2] = 1;
+  TEST_ASSERT_FALSE(parseSpatial(bad, 4, out));
+}
+
+void test_spatial_zone_idents() {
+  TEST_ASSERT_EQUAL_STRING("left", zoneIdent(ZONE_LEFT));
+  TEST_ASSERT_EQUAL_STRING("screen", zoneIdent(ZONE_FULLSCREEN));
+  TEST_ASSERT_EQUAL_STRING("Centre", zoneLabel(ZONE_CENTER));
+  TEST_ASSERT_EQUAL_STRING("Bottom-left", zoneLabel(ZONE_BOTTOM_LEFT));
+  TEST_ASSERT_EQUAL_STRING("none", zoneIdent((ZoneId)99));
+}
+
+// --------------------------------------------------------- spatial wave field
+void test_wave_rest_is_zero_and_peaks_at_spawn() {
+  SpatialWaveField f;
+  TEST_ASSERT_EQUAL_INT(0, f.activeCount());
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, f.intensityAt(0.5f, 0.5f, 0u));
+
+  f.spawn(0.5f, 0.5f, 1.0f, 2.0f, 0.8f, 0.7f, 0u);
+  TEST_ASSERT_EQUAL_INT(1, f.activeCount());
+  const float nearOrigin = f.intensityAt(0.5f, 0.5f, 1u);
+  const float midway = f.intensityAt(0.9f, 0.5f, 1u);
+  const float far = f.intensityAt(0.05f, 0.05f, 1u);
+  TEST_ASSERT(nearOrigin > 0.9f);
+  TEST_ASSERT(nearOrigin > midway && midway > far);
+  TEST_ASSERT(f.intensityAt(1.0f, 1.0f, 1u) < 0.6f);
+}
+
+void test_wave_propagates_away_then_fades() {
+  SpatialWaveField f;
+  f.spawn(0.2f, 0.5f, 1.0f, 1.0f, 0.8f, 0.4f, 0u);
+  const float s0 = f.intensityAt(0.8f, 0.5f, 0u);       // far ahead, not there yet
+  const float sMid = f.intensityAt(0.8f, 0.5f, 500u);   // front arrives
+  const float sLate = f.intensityAt(0.8f, 0.5f, 1500u); // passed + decayed
+  TEST_ASSERT(sMid > s0);
+  TEST_ASSERT(sMid > sLate);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, f.intensityAt(0.2f, 0.5f, 0u));
+  TEST_ASSERT(f.intensityAt(0.2f, 0.5f, 1000u) < 0.2f);  // origin left behind
+}
+
+void test_wave_ring_is_bounded_and_overwrites() {
+  SpatialWaveField f;
+  TEST_ASSERT_EQUAL_INT(12, f.maxWaves());
+  f.setMaxWaves(4);
+  for (int i = 0; i < 10; ++i)
+    f.spawn(0.1f + 0.08f * i, 0.5f, 0.5f, 2.0f, 0.8f, 0.7f, (uint32_t)i);
+  TEST_ASSERT_EQUAL_INT(4, f.activeCount());  // bounded: oldest are displaced
+  f.reset();
+  TEST_ASSERT_EQUAL_INT(0, f.activeCount());
+  f.spawn(0.5f, 0.5f, 1.0f, 2.0f, 0.8f, 0.7f, 0u);
+  TEST_ASSERT_EQUAL_INT(1, f.activeCount());
+  TEST_ASSERT(f.intensityAt(0.5f, 0.5f, 1u) > 0.9f);  // fresh ring slot responds
+}
+
+void test_wave_line_sweep_lights_along_its_path() {
+  SpatialWaveField f;
+  f.spawnLine(0.2f, 0.5f, 1.0f, 0.0f, 1.0f, 1.0f, 0.8f, 0.4f, 0u);
+  // the front takes time to reach the east side of the room
+  const float east0 = f.intensityAt(0.8f, 0.5f, 0u);
+  const float east = f.intensityAt(0.8f, 0.5f, 400u);
+  TEST_ASSERT(east > east0);
+  TEST_ASSERT(f.intensityAt(0.8f, 0.5f, 3000u) < east);  // swept past + faded
+  // perpendicular to the ray (top/bottom) the sweep washes over immediately
+  TEST_ASSERT(f.intensityAt(0.2f, 0.9f, 0u) > 0.95f);
+}
+
+// ------------------------------------------------- config + apply + engine
+void test_config_wave_knobs_clamp() {
+  Config c;
+  c.roomMapping = true;
+  c.waveSpeed = 99.0f;
+  c.waveDecay = -3.0f;
+  c.waveWidth = 0.0f;
+  c.maxWaves = 99;
+  clampConfig(c);
+  TEST_ASSERT_TRUE(c.roomMapping);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 5.0f, c.waveSpeed);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, c.waveDecay);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, c.waveWidth);
+  TEST_ASSERT_EQUAL_INT(12, (int)c.maxWaves);
+
+  Config low;
+  low.waveDecay = 0.0f;
+  low.maxWaves = 2;
+  clampConfig(low);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, low.waveDecay);
+  TEST_ASSERT_EQUAL_INT(4, (int)low.maxWaves);
+}
+
+void test_apply_zone_scale_default_is_identity() {
+  Config c;
+  defaultConfig(c);
+  Look lk;
+  lk.brightness = 0.5f;
+  lk.saturation = 0.7f;
+  lk.hueShift = 0.1f;
+
+  Themes::ThemeFrame a;
+  a.brightness = 1.0f;
+  a.saturation = 1.0f;
+  a.intensity = 1.0f;
+  Themes::ThemeFrame b = a;
+  applyToThemeFrame(a, lk, c);           // old call shape / default arg
+  applyToThemeFrame(b, lk, c, 1.0f);     // explicit pass-through scale
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, a.brightness, b.brightness);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, a.saturation, b.saturation);
+
+  Themes::ThemeFrame dim;
+  dim.brightness = 1.0f;
+  dim.saturation = 1.0f;
+  dim.intensity = 1.0f;
+  applyToThemeFrame(dim, lk, c, 0.5f);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, b.brightness * 0.5f, dim.brightness);
+  // over-scale is clamped so brightness never exceeds the apply ceiling
+  Themes::ThemeFrame hot = a;
+  applyToThemeFrame(hot, lk, c, 5.0f);
+  TEST_ASSERT(hot.brightness <= 1.0f);
+}
+
+void test_engine_spawns_wave_on_boom_only_when_mapping() {
+  // mapping OFF: video booms react but never touch the wave field
+  Config off;
+  defaultConfig(off);
+  CinematicEngine eng;
+  eng.configure(off);
+  uint32_t now = 1000;
+  SpatialInfo sp;
+  sp.focusX = 230;
+  sp.focusY = 40;
+  sp.zoneCount = 1;
+  sp.zones[0] = SpatialInfo::Zone{ZONE_RIGHT, 80};
+  Frame boom = videoFrame(1u, now, sceneframe::SCENE_EXPLOSION,
+                          sceneframe::SEVENT_BOOM, 100, 255, 30, 200, 200, 255);
+  eng.update(quietAudio(), &boom, now, &sp);
+  TEST_ASSERT_EQUAL_INT(0, eng.waves().activeCount());
+  TEST_ASSERT_FALSE(eng.status().spatialActive);
+
+  // mapping ON: the boom blooms at the focus point
+  Config on;
+  defaultConfig(on);
+  on.roomMapping = true;
+  CinematicEngine eng2;
+  eng2.configure(on);
+  eng2.update(quietAudio(), &boom, now, &sp);
+  now += 16;
+  eng2.update(quietAudio(), &boom, now, &sp);
+  TEST_ASSERT(eng2.waves().activeCount() >= 1);
+  TEST_ASSERT_TRUE(eng2.status().spatialActive);
+  const float near = eng2.waves().intensityAt(0.90f, 0.16f, now);
+  const float far = eng2.waves().intensityAt(0.05f, 0.84f, now);
+  TEST_ASSERT(near > far);
+  // and the status carries the spatial flag through the web-layer contract
+  TEST_ASSERT_TRUE(eng2.status().spatialActive);
+}
+
+void test_engine_change_spawns_directional_sweep() {
+  Config c;
+  defaultConfig(c);
+  c.roomMapping = true;
+  CinematicEngine eng;
+  eng.configure(c);
+
+  uint32_t now = 500;
+  Frame chase = videoFrame(1u, now, sceneframe::SCENE_CHASE,
+                           sceneframe::SEVENT_CHANGE, 90, 200, 40, 160, 180, 230);
+  SpatialInfo left;
+  left.focusX = 30;
+  left.focusY = 128;
+  eng.update(quietAudio(), &chase, now, &left);
+  now += 300;
+  SpatialInfo right;
+  right.focusX = 220;
+  right.focusY = 128;
+  Frame chase2 = videoFrame(2u, now, sceneframe::SCENE_CHASE,
+                            sceneframe::SEVENT_CHANGE, 90, 200, 40, 160, 180, 230);
+  eng.update(quietAudio(), &chase2, now, &right);
+
+  TEST_ASSERT(eng.waves().activeCount() >= 1);
+  // the rightward sweep lights the east side far before the distant west
+  const float east = eng.waves().intensityAt(0.86f, 0.5f, now);
+  const float westFar = eng.waves().intensityAt(0.05f, 0.5f, now);
+  TEST_ASSERT(east > westFar);
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------- main
@@ -763,5 +1036,17 @@ int main(int argc, char** argv) {
   RUN_TEST(test_director_genre_auto_stays_bounded);
   RUN_TEST(test_director_flash_scale_never_exceeds_one);
   RUN_TEST(test_engine_status_exposes_intent);
+  RUN_TEST(test_spatial_block_roundtrip);
+  RUN_TEST(test_spatial_block_rides_an_overlong_frame);
+  RUN_TEST(test_spatial_block_rejects_malformed);
+  RUN_TEST(test_spatial_zone_idents);
+  RUN_TEST(test_wave_rest_is_zero_and_peaks_at_spawn);
+  RUN_TEST(test_wave_propagates_away_then_fades);
+  RUN_TEST(test_wave_ring_is_bounded_and_overwrites);
+  RUN_TEST(test_wave_line_sweep_lights_along_its_path);
+  RUN_TEST(test_config_wave_knobs_clamp);
+  RUN_TEST(test_apply_zone_scale_default_is_identity);
+  RUN_TEST(test_engine_spawns_wave_on_boom_only_when_mapping);
+  RUN_TEST(test_engine_change_spawns_directional_sweep);
   return UNITY_END();
 }

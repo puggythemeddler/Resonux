@@ -1,6 +1,7 @@
 #pragma once
 #include "cinema/CinematicConfig.h"
 #include "cinema/SceneFrame.h"
+#include "cinema/SpatialBlock.h"
 #include <WiFiUdp.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -28,6 +29,9 @@ public:
   bool live(uint32_t staleMs) const;
   // Copy of the latest valid frame; returns false when nothing is stored yet.
   bool frame(sceneframe::Frame& out) const;
+  // Copy of the latest spatial block parsed off a frame payload. Returns
+  // false when the last accepted frame carried none.
+  bool spatial(sceneframe::SpatialInfo& out) const;
   uint32_t lastRxMs() const { return _lastRxMs; }
   uint32_t seq() const { return _seq; }
 
@@ -44,12 +48,14 @@ private:
   uint16_t _port = 0;
 
   sceneframe::Frame _latest;
+  sceneframe::SpatialInfo _spatial;
+  bool _haveSpatial = false;
   mutable SemaphoreHandle_t _mutex = nullptr;
   bool _have = false;
   uint32_t _seq = 0;
   uint32_t _lastRxMs = 0;
 
-  uint8_t _rxBuf[sizeof(sceneframe::Frame) + 8];
+  uint8_t _rxBuf[sizeof(sceneframe::Frame) + sceneframe::kSpatialMaxBlock];
 
   static constexpr uint32_t kTaskStack = 3072;
   static constexpr UBaseType_t kTaskPriority = 14;

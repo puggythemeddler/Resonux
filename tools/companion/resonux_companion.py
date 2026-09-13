@@ -55,22 +55,42 @@ FRAME_FMT = "<IHHII" + "B" * 10 + "2x"  # see SceneFrame.h
 FRAME_BYTES = struct.calcsize(FRAME_FMT)
 SFLAG_PROGRAM_AUDIO = 0b01
 SFLAG_PILLARBOX = 0b10
+SFLAG_SPATIAL_BLOCK = 0x2000  # appended length-tagged block (SpatialBlock.h)
 
 SCENE_REV = {v: k for k, v in SCENE.items()}
 EVENT_REV = {v: k for k, v in EVENT.items()}
 
 
+def pack_spatial(focus_x, focus_y, zones):
+    """Length-tagged spatial block: 'S' 'P' len focusX focusY + zone pairs.
+
+    Layout mirrors SpatialBlock.h. `zones` is a list of (zone_id, conf)
+    pairs, truncated to the 8-entry cap.
+    """
+    zones = (zones or [])[:8]
+    header = struct.pack("<BBB B B", 0x53, 0x50, 2 + 2 * len(zones),
+                         int(focus_x) & 0xFF, int(focus_y) & 0xFF)
+    tail = b"".join(struct.pack("<BB", int(z) & 0xFF, max(0, min(100, int(c))))
+                    for z, c in zones)
+    return header + tail
+
+
 def pack_frame(seq, host_ms, scene, event, conf, lum, hue, sat, val,
-               motion, prog_audio, source_flags):
-    """Returns a 30-byte SceneFrame as bytes."""
-    return struct.pack(
-        FRAME_FMT, K_SCENE_MAGIC, K_VERSION, 0, seq, host_ms,
+               motion, prog_audio, source_flags, spatial=None):
+    """Returns the SceneFrame (with optional appended spatial block) as bytes."""
+    flags = SFLAG_SPATIAL_BLOCK if spatial else 0
+    frame = struct.pack(
+        FRAME_FMT, K_SCENE_MAGIC, K_VERSION, flags, seq, host_ms,
         int(scene), int(event), max(0, min(100, int(conf))),
         max(0, min(255, int(lum))), max(0, min(255, int(hue))),
         max(0, min(255, int(sat))), max(0, min(255, int(val))),
         max(0, min(255, int(motion))), max(0, min(255, int(prog_audio))),
         int(source_flags),
     )
+    if spatial:
+        frame += pack_spatial(spatial["focusX"], spatial["focusY"],
+                              spatial.get("zones"))
+    return frame
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +246,7 @@ def main(argv=None):
                 f.get("lum", 0), f.get("hue", 0), f.get("sat", 0),
                 f.get("val", 0), f.get("motion", 0),
                 int(255 * min(1.0, f.get("level", 0.0))), source_flags,
+                f.get("spatial"),
             )
             sock.sendto(frame, (args.group, args.port))
 

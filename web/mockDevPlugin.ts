@@ -62,6 +62,8 @@ const DEFAULT_CONFIG: Record<string, unknown> = {
       sensitivity: 1,
       decay: 0,
       targetFps: 60,
+      roomX: 0.5,
+      roomY: 0.5,
     },
   ],
   net: {
@@ -325,8 +327,9 @@ export default function mockDevPlugin(): Plugin {
     visualInfluence: 0.7, audioInfluence: 0.5, colorInfluence: 1, speed: 0.5,
     smoothing: 0.4, flashIntensity: 0.6, flashDurationMs: 180,
     flashMinGapMs: 90, boomCooldownMs: 450, whisperDim: 0.55, maxBrightness: 1,
-    ambientFloor: 0.06, receiveUdp: true, group: '239.255.42.11', port: 9772,
-    staleMs: 1200,
+    ambientFloor: 0.06, roomMapping: false, waveSpeed: 2, waveDecay: 0.8,
+    waveWidth: 0.7, maxWaves: 8, receiveUdp: true, group: '239.255.42.11',
+    port: 9772, staleMs: 1200,
   }
   let cineSeq = 1
 
@@ -928,6 +931,7 @@ export default function mockDevPlugin(): Plugin {
                 moodLabel: ['Calm', 'Suspense', 'Tension', 'Action', 'Impact', 'Aftermath', 'Transition', 'Performance'][Math.floor(Math.random() * 8)],
                 moodEnergy: Math.round((0.2 + Math.random() * 0.7) * 100) / 100,
                 recentEvents: Math.floor(Math.random() * 5),
+                spatialActive: Boolean(cineConfig.roomMapping),
               },
             })
             return
@@ -941,14 +945,15 @@ export default function mockDevPlugin(): Plugin {
                   cineConfig = { ...cineConfig, ...p, mode }
                 }
               }
-              const floats = ['sensitivity', 'reaction', 'visualInfluence', 'audioInfluence', 'colorInfluence', 'speed', 'smoothing', 'flashIntensity', 'whisperDim', 'maxBrightness', 'ambientFloor']
-              const ints = ['flashDurationMs', 'flashMinGapMs', 'boomCooldownMs', 'port', 'staleMs']
+              const floats = ['sensitivity', 'reaction', 'visualInfluence', 'audioInfluence', 'colorInfluence', 'speed', 'smoothing', 'flashIntensity', 'whisperDim', 'maxBrightness', 'ambientFloor', 'waveSpeed', 'waveDecay', 'waveWidth']
+              const ints = ['flashDurationMs', 'flashMinGapMs', 'boomCooldownMs', 'port', 'staleMs', 'maxWaves']
               for (const k of floats) if (typeof body[k] === 'number') cineConfig[k] = body[k]
               for (const k of ints) if (typeof body[k] === 'number') cineConfig[k] = Math.round(Number(body[k]))
               if (typeof body.enabled === 'boolean') cineConfig.enabled = body.enabled
               if (typeof body.mode === 'number' && body.applyPreset !== true) cineConfig.mode = Math.round(Number(body.mode)) % 5
-              if (typeof body.genre === 'number') cineConfig.genre = Math.round(Number(body.genre)) % 3
+              if (typeof body.genre === 'number') cineConfig.genre = Math.round(Number(body.genre)) % 4
               if (typeof body.receiveUdp === 'boolean') cineConfig.receiveUdp = body.receiveUdp
+              if (typeof body.roomMapping === 'boolean') cineConfig.roomMapping = body.roomMapping
               if (typeof body.group === 'string' && body.group) cineConfig.group = body.group
               json(res, 200, { ok: true, seq: cineSeq++ })
             })

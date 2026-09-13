@@ -53,9 +53,43 @@ class HostVideo:
             hue = 60.0 * ((r - g) / max(1e-6, mx - mn) + 4) / 360.0 * 255.0
         val = mx
         motion = 0.0
+        spatial = None
         if self._prev is not None:
-            diff = float(np.mean(np.abs(small - self._prev)))
-            motion = min(255.0, diff * 20.0)
+            diff = np.abs(small - self._prev)
+            motion = min(255.0, float(np.mean(diff)) * 20.0)
+            # pixel-resolved motion map -> on-screen focus + zone salience.
+            # The map is already downscaled (screen/scale), so the reductions
+            # are cheap. focusX/focusY is the argmax column/row; zones carry
+            # the fraction of the motion energy per screen region.
+            dmap = diff.mean(axis=2)
+            total = float(dmap.sum()) + 1e-6
+            h, w = dmap.shape
+            rows = dmap.sum(axis=1) if h else np.zeros((1,), float)
+            cols = dmap.sum(axis=0) if w else np.zeros((1,), float)
+            focus_x = float(np.argmax(cols)) / max(1, w) if w else 0.5
+            focus_y = float(np.argmax(rows)) / max(1, h) if h else 0.5
+            zones = []
+            if w:
+                thirds = [float(cols[:w // 3].sum()),
+                          float(cols[w // 3:2 * w // 3].sum()),
+                          float(cols[2 * w // 3:].sum())]
+                best = max(range(3), key=lambda i: thirds[i])
+                # 0,1,2 = LEFT,CENTRE,RIGHT (SceneFrame ZoneId)
+                zones.append((best, int(100 * thirds[best] / total)))
+            if h:
+                halves = [float(rows[:h // 2].sum()),
+                          float(rows[h // 2:].sum())]
+                tb = max(range(2), key=lambda i: halves[i])
+                # 3 = TOP, 4 = BOTTOM
+                zones.append((3 if tb == 0 else 4,
+                              int(100 * halves[tb] / total)))
+            if motion > 60.0:
+                zones.append((9, int(100.0 * min(1.0, motion / 180.0))))
+            spatial = {
+                "focusX": int(focus_x * 255),
+                "focusY": int(focus_y * 255),
+                "zones": zones[:3],
+            }
         self._prev = small
         now = time_ms()
         dts = max(1.0, (now - self._prev_time) / 1000.0)
@@ -74,6 +108,7 @@ class HostVideo:
         return {
             "lum": int(lum), "hue": int(hue), "sat": int(sat), "val": int(val),
             "motion": int(motion), "scene": scene, "conf": 75,
+            "spatial": spatial,
         }
 
 

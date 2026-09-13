@@ -175,6 +175,11 @@ type CinematicConfig = {
   whisperDim: number
   maxBrightness: number
   ambientFloor: number
+  roomMapping: boolean
+  waveSpeed: number
+  waveDecay: number
+  waveWidth: number
+  maxWaves: number
   receiveUdp: boolean
   group: string
   port: number
@@ -204,6 +209,7 @@ type CinematicStatus = {
   moodLabel: string
   moodEnergy: number
   recentEvents: number
+  spatialActive?: boolean
 }
 
 type CinematicData = {
@@ -456,6 +462,9 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
     { key: 'whisperDim', label: 'Whisper dim', min: 0, max: 1, step: 0.05 },
     { key: 'maxBrightness', label: 'Max brightness', min: 0, max: 1, step: 0.05 },
     { key: 'ambientFloor', label: 'Ambient floor', min: 0, max: 0.5, step: 0.01, hint: 'Minimum brightness in near-black scenes.' },
+    { key: 'waveSpeed', label: 'Wave speed', min: 0.5, max: 5, step: 0.1, hint: 'How fast an event focus travels across the room (units = room widths per second).' },
+    { key: 'waveDecay', label: 'Wave decay', min: 0.1, max: 2, step: 0.05, hint: 'How quickly wave energy fades as it moves.' },
+    { key: 'waveWidth', label: 'Wave width', min: 0.1, max: 1, step: 0.05, hint: 'Breadth of the bright wavefront.' },
   ]
 
   return (
@@ -512,8 +521,28 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
             onChange={(v) => knob(String(f.key), v, f.key)}
           />
         ))}
-        {fields.some((f) => f.hint) && <p className="muted">{fields.find((f) => f.key === 'ambientFloor')?.hint}</p>}
+        {fields.filter((f) => f.hint).map((f) => (
+          <p key={f.key} className="muted">{f.hint}</p>
+        ))}
         <p className="muted">Knobs apply instantly over the live endpoint — no flash write, no reboot.</p>
+
+        <h4 style={{ marginTop: 12 }}>Room mapping (spatial waves)</h4>
+        <div className="row">
+          <label>Map event focus across the room</label>
+          <input type="checkbox" checked={!!c.roomMapping}
+            onChange={(e) => toggle('roomMapping', e.target.checked)} />
+        </div>
+        <div className="row">
+          <label>Wave count (ring depth)</label>
+          <input type="number" min={4} max={12} value={c.maxWaves}
+            onChange={(e) => setInt('maxWaves', e.target.value)} />
+        </div>
+        <p className="muted">
+          With mapping on, every strip samples a wave field at its room position (
+          <code>roomX</code>/<code>roomY</code> 0–1 in Configuration, default 0.5 = centre). Companion
+          focus points become waves that travel outward — booms bloom, cuts sweep, chases lock on. When
+          off, strips react identically (no change).
+        </p>
       </div>
 
       <div className="card">
@@ -522,6 +551,7 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
           <span className={`dot ${data.active ? 'beat' : ''}`} />
           <span>{data.active ? 'reacting to content' : 'off'}</span>
           <span style={{ marginLeft: 'auto' }}>{data.companionAlive ? 'companion feed live' : 'device audio only'}</span>
+          {!!s.spatialActive && <span style={{ marginLeft: 8 }}>· mapping</span>}
         </div>
         <div className="stat-row">
           <div className="stat"><div className="val">{s.sceneId}</div><div className="lbl">Scene</div></div>

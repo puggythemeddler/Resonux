@@ -55,6 +55,14 @@ struct Config {
   float     maxBrightness = 1.0f;  // 0..1 ceiling on modulated brightness
   float     ambientFloor = 0.06f;  // min brightness in near-black scenes
 
+  // spatial room mapping (spec: Spatial Wave Propagation). OFF by default so
+  // nothing changes until the user both enables it and places their strips.
+  bool      roomMapping = false;   // map event focus into per-strip waves
+  float     waveSpeed = 2.0f;      // 0.5..5 room units / second
+  float     waveDecay = 0.8f;      // 0.1..2 per-second fading of wave energy
+  float     waveWidth = 0.7f;      // 0.1..1 wavefront bulge width
+  uint8_t   maxWaves = 8;          // 4..12 bounded wave ring depth
+
   // companion (SceneLink) network
   bool      receiveUdp = false;    // listen for companion SceneFrames
   char      group[16] = "239.255.42.11";
@@ -84,6 +92,15 @@ inline void clampConfig(Config& c) {
   cl(c.whisperDim, 0.0f, 1.0f);
   cl(c.maxBrightness, 0.0f, 1.0f);
   cl(c.ambientFloor, 0.0f, 0.5f);
+  cl(c.waveSpeed, 0.5f, 5.0f);
+  cl(c.waveDecay, 0.1f, 2.0f);
+  cl(c.waveWidth, 0.1f, 1.0f);
+
+  auto clampU8 = [](uint8_t& v, uint8_t lo, uint8_t hi) {
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+  };
+  clampU8(c.maxWaves, 4, 12);
 
   auto clampU16 = [](uint16_t& v, uint16_t lo, uint16_t hi) {
     if (v < lo) v = lo;

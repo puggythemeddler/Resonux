@@ -425,12 +425,14 @@ void App::ledLoop() {
   cine::AudioFeatures caf;
   if (cineOn) {
     caf = _cinAnalyzer.process(f);
-    if (_sceneLink && _sceneLink->live(cineCfg.staleMs)) {
-      sceneframe::Frame sf;
-      if (_sceneLink->frame(sf)) {
-        _cinEngine.update(caf, &sf, now);
-        _cinStatus = _cinEngine.status();
-      }
+    sceneframe::Frame sf;
+    if (_sceneLink && _sceneLink->live(cineCfg.staleMs) &&
+        _sceneLink->frame(sf)) {
+      sceneframe::SpatialInfo sp;
+      const sceneframe::SpatialInfo* spatial =
+          _sceneLink->spatial(sp) ? &sp : nullptr;
+      _cinEngine.update(caf, &sf, now, spatial);
+      _cinStatus = _cinEngine.status();
     } else {
       _cinEngine.update(caf, nullptr, now);
       _cinStatus = _cinEngine.status();
@@ -444,7 +446,18 @@ void App::ledLoop() {
     uint32_t period = 1000u / (st->cfg().targetFps ? st->cfg().targetFps : 60);
     if (now - st->lastStepMs() >= period) {
       Themes::ThemeFrame th = te.processStrip(i, f, now);
-      if (cineOn) cine::applyToThemeFrame(th, _cinEngine.look(), cineCfg);
+      if (cineOn) {
+        // spatial mapping: each strip samples the wave field at its room
+        // position; with mapping OFF the scale stays 1.0 (no change).
+        float zoneScale = 1.0f;
+        if (cineCfg.roomMapping) {
+          const StripConfig& sc = _strips[i]->cfg();
+          const float e =
+              _cinEngine.waves().intensityAt(sc.roomX, sc.roomY, now);
+          zoneScale = 0.70f + 0.30f * e;  // quiet floor, wave peaks pop
+        }
+        cine::applyToThemeFrame(th, _cinEngine.look(), cineCfg, zoneScale);
+      }
       th.brightness *= master;
       st->step(f, now, &th);
     }

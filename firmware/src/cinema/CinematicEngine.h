@@ -4,6 +4,8 @@
 #include "cinema/SceneAnalyzer.h"
 #include "cinema/SceneFrame.h"
 #include "cinema/SceneMemory.h"
+#include "cinema/SpatialBlock.h"
+#include "cinema/SpatialWaveField.h"
 #include "util/Rgb.h"
 #include <stdint.h>
 #include <math.h>
@@ -47,6 +49,8 @@ struct Status {
   Mood mood = MOOD_CALM;
   float moodEnergy = 0.0f;
   uint8_t recentEvents = 0;
+  // spatial layer (spec: room mapping)
+  bool spatialActive = false;  // roomMapping on AND a fresh spatial sample
 };
 
 // Modulation target, produced once per LED frame and handed to the theme
@@ -90,16 +94,24 @@ class CinematicEngine {
   void configure(const Config& c) {
     _cfg = c;
     clampConfig(_cfg);
+    _waveField.setMaxWaves((int)_cfg.maxWaves);
   }
 
   // Feed once per LED frame: local audio features from SceneAnalyzer, plus the
   // freshest SceneFrame (nullptr when the companion is absent/stale — the
   // caller checks staleness; the engine also decays into failsafe on its own).
+  // `spatial` is the optional length-tagged spatial block parsed off the same
+  // SceneFrame payload; the engine keeps the last good sample even if a later
+  // Frame has none (the focus just persists).
   Status update(const AudioFeatures& audio,
-                const sceneframe::Frame* scene, uint32_t nowMs);
+                const sceneframe::Frame* scene, uint32_t nowMs,
+                const sceneframe::SpatialInfo* spatial = nullptr);
 
   const Look& look() const { return _look; }
   const Status& status() const { return _status; }
+  const SpatialWaveField& waves() const { return _waveField; }
+  const sceneframe::SpatialInfo& spatialInfo() const { return _spatial; }
+  bool hasSpatial() const { return _haveSpatial; }
 
  private:
   void buildLook(const AudioFeatures& audio, bool videoActive,
@@ -132,11 +144,24 @@ class CinematicEngine {
   SceneMemory _memory;
   CinematicDirector _director;
   CinematicIntent _intent;
+
+  // spatial wave field + last sample (spec: room mapping)
+  SpatialWaveField _waveField;
+  sceneframe::SpatialInfo _spatial;
+  bool _haveSpatial = false;
+  uint32_t _lastChaseWaveMs = 0;
+  uint8_t _prevFocusX = 128;
+  uint8_t _prevFocusY = 128;
 };
 
 inline Status CinematicEngine::update(const AudioFeatures& audio,
                                       const sceneframe::Frame* scene,
-                                      uint32_t nowMs) {
+                                      uint32_t nowMs,
+                                      const sceneframe::SpatialInfo* spatial) {
+  if (spatial) {
+    _spatial = *spatial;
+    _haveSpatial = true;
+  }
   uint32_t dt = 16;
   if (_lastUpdateMs && nowMs >= _lastUpdateMs &&
       nowMs - _lastUpdateMs < 5000u) {
@@ -174,6 +199,11 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
 
   const float sens = _cfg.sensitivity;
 
+  // spatial focus for the wave field: last known sample, or room centre
+  const float fx = _haveSpatial ? (float)_spatial.focusX / 255.0f : 0.5f;
+  const float fy = _haveSpatial ? (float)_spatial.focusY / 255.0f : 0.5f;
+  const bool mapping = _cfg.roomMapping;
+
   // cooldown helpers: a zero timestamp means "never fired" (sentinel drives the
   // gap to infinity so the first event always passes)
   const uint32_t sinceFlash = _lastFlashStartMs == 0
@@ -193,6 +223,10 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
           _flashHoldMs = _cfg.flashDurationMs;
           _boom = weight;
           _boomHoldMs = _cfg.flashDurationMs + 60u;
+          if (mapping) {
+            _waveField.spawn(fx, fy, cl01(weight), _cfg.waveSpeed,
+                             _cfg.waveDecay, _cfg.waveWidth, nowMs);
+          }
         }
         break;
       case sceneframe::SEVENT_FLASH:
@@ -200,6 +234,30 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
           _lastFlashStartMs = nowMs;
           _flash = _cfg.flashIntensity * weight;
           _flashHoldMs = _cfg.flashDurationMs;
+          if (mapping) {
+            _waveField.spawn(fx, fy, cl01(weight) * 0.7f, _cfg.waveSpeed,
+                             _cfg.waveDecay, _cfg.waveWidth, nowMs);
+          }
+        }
+        break;
+      case sceneframe::SEVENT_CHANGE:
+        if (mapping) {
+          // focus moved => the light sweeps across the room; else a bloom
+          if (_haveSpatial &&
+              (_prevFocusX != _spatial.focusX ||
+               _prevFocusY != _spatial.focusY)) {
+            float dx = ((float)_spatial.focusX - (float)_prevFocusX) / 255.0f;
+            float dy = ((float)_spatial.focusY - (float)_prevFocusY) / 255.0f;
+            if (dx == 0.0f) dx = 1e-4f;
+            _waveField.spawnLine(fx, fy, dx, dy, cl01(weight) * 0.8f,
+                                 _cfg.waveSpeed, _cfg.waveDecay,
+                                 _cfg.waveWidth, nowMs);
+          } else {
+            _waveField.spawn(fx, fy, cl01(weight) * 0.8f, _cfg.waveSpeed,
+                             _cfg.waveDecay, _cfg.waveWidth, nowMs);
+          }
+          _prevFocusX = _spatial.focusX;
+          _prevFocusY = _spatial.focusY;
         }
         break;
       case sceneframe::SEVENT_WHISPER:
@@ -213,6 +271,16 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
     }
   }
 
+  // sustained chase action keeps feeding the wave field at the focus so the
+  // room "locks on" to a panning subject, not just single-frame events
+  if (videoActive && sceneKind == sceneframe::SCENE_CHASE && mapping) {
+    if (nowMs - _lastChaseWaveMs >= 400u) {
+      _lastChaseWaveMs = nowMs;
+      _waveField.spawn(fx, fy, cl01(_vMotion) * 0.35f + 0.25f,
+                       _cfg.waveSpeed, _cfg.waveDecay, _cfg.waveWidth, nowMs);
+    }
+  }
+
   // ---- react to local audio -----------------------------------------------  // sustained-loud music pulses but must not re-trigger as booms
   const float aw = _cfg.audioInfluence * sens;
   if (audio.boom > 0.01f && sinceBoom >= _cfg.boomCooldownMs) {
@@ -221,6 +289,10 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
     _flashHoldMs = _cfg.flashDurationMs;
     _boom = audio.boom * aw;
     _boomHoldMs = _cfg.flashDurationMs + 60u;
+    if (mapping) {
+      _waveField.spawn(fx, fy, cl01(aw * audio.boom) * 0.8f, _cfg.waveSpeed,
+                       _cfg.waveDecay, _cfg.waveWidth, nowMs);
+    }
   } else if (audio.impact > 0.01f && sinceFlash >= _cfg.flashMinGapMs) {
     _lastFlashStartMs = nowMs;
     _flash = _cfg.flashIntensity * aw * audio.impact * 0.6f;
@@ -292,6 +364,7 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
   _status.tension = cl01(audio.tension);
   _status.lastFrameMs = _lastFrameMs;
   _status.companionAlive = videoActive;
+  _status.spatialActive = mapping && videoActive && _haveSpatial;
   return _status;
 }
 

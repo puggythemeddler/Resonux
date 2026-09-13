@@ -744,6 +744,11 @@ void WebUi::sendCinematic() {
   cfg["whisperDim"] = c.whisperDim;
   cfg["maxBrightness"] = c.maxBrightness;
   cfg["ambientFloor"] = c.ambientFloor;
+  cfg["roomMapping"] = c.roomMapping;
+  cfg["waveSpeed"] = c.waveSpeed;
+  cfg["waveDecay"] = c.waveDecay;
+  cfg["waveWidth"] = c.waveWidth;
+  cfg["maxWaves"] = c.maxWaves;
   cfg["receiveUdp"] = c.receiveUdp;
   cfg["group"] = c.group;
   cfg["port"] = c.port;
@@ -778,6 +783,7 @@ void WebUi::sendCinematic() {
       _app->cinematicActive() ? cine::moodLabel(s.mood) : "Off";
   st["moodEnergy"] = s.moodEnergy;
   st["recentEvents"] = s.recentEvents;
+  st["spatialActive"] = _app->cinematicActive() && s.spatialActive;
 
   String out;
   serializeJson(doc, out);
@@ -823,6 +829,13 @@ void WebUi::handleCinematicPut() {
   mergeFloat("whisperDim", c.whisperDim);
   mergeFloat("maxBrightness", c.maxBrightness);
   mergeFloat("ambientFloor", c.ambientFloor);
+  if (doc["roomMapping"].is<bool>())
+    c.roomMapping = doc["roomMapping"].as<bool>();
+  mergeFloat("waveSpeed", c.waveSpeed);
+  mergeFloat("waveDecay", c.waveDecay);
+  mergeFloat("waveWidth", c.waveWidth);
+  if (doc["maxWaves"].is<int>())
+    c.maxWaves = (uint8_t)doc["maxWaves"].as<int>();
   if (doc["receiveUdp"].is<bool>()) c.receiveUdp = doc["receiveUdp"].as<bool>();
   if (doc["group"].is<const char*>()) {
     strncpy(c.group, doc["group"].as<const char*>(), sizeof(c.group) - 1);

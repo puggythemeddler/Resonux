@@ -21,9 +21,16 @@ inline float cap01(float v) {
 // Applies a cinematic Look on top of a processed theme frame. Deliberately
 // conservative: modulation multiplies/offsets, never replaces, the underlying
 // theme — a theme always stays recognizable.
+//
+// `zoneScale` is the spatial wave-field response of this strip (0..1, from
+// SpatialWaveField::intensityAt) mapped by the caller into a brightness
+// multiplier. Leave the default 1.0 (or pass it explicitly) for exactly the
+// pre-mapping behaviour — room mapping OFF means the formula is unchanged.
 inline void applyToThemeFrame(Themes::ThemeFrame& th, const Look& lk,
-                              const Config& cfg) {
-  th.brightness = cap01(th.brightness * lk.brightness);
+                              const Config& cfg, float zoneScale = 1.0f) {
+  if (zoneScale < 0.0f) zoneScale = 0.0f;
+  if (zoneScale > 1.0f) zoneScale = 1.0f;
+  th.brightness = cap01(th.brightness * lk.brightness * zoneScale);
   th.saturation = cap01(th.saturation * lk.saturation);
   th.colourShift = cap01(th.colourShift + lk.hueShift);
   th.movement = cap01(th.movement + lk.movement);

@@ -59,6 +59,7 @@ void SceneLinkNode::stop() {
   }
   _enabled = false;
   _have = false;
+  _haveSpatial = false;
   _seq = 0;
   _lastRxMs = 0;
 }
@@ -73,6 +74,15 @@ bool SceneLinkNode::frame(sceneframe::Frame& out) const {
   if (!xSemaphoreTake(_mutex, pdMS_TO_TICKS(5))) return false;
   const bool ok = _have;
   if (ok) out = _latest;
+  xSemaphoreGive(_mutex);
+  return ok;
+}
+
+bool SceneLinkNode::spatial(sceneframe::SpatialInfo& out) const {
+  if (!_mutex) return false;
+  if (!xSemaphoreTake(_mutex, pdMS_TO_TICKS(5))) return false;
+  const bool ok = _haveSpatial;
+  if (ok) out = _spatial;
   xSemaphoreGive(_mutex);
   return ok;
 }
@@ -94,10 +104,21 @@ void SceneLinkNode::taskLoop() {
     memcpy(&p, _rxBuf, sizeof(p));
     if (sceneframe::validFrame(p, (size_t)n) &&
         p.seq != _seq /* drop frames we already consumed */) {
+      // optional appended spatial block (SpatialBlock.h). Over-long payloads
+      // are accepted; the block is skipped entirely if absent or malformed.
+      sceneframe::SpatialInfo sp;
+      const bool hasSpatial =
+          (p.flags & sceneframe::SFLAG_SPATIAL_BLOCK) != 0 &&
+          sceneframe::parseSpatial(_rxBuf + sizeof(p),
+                                   (size_t)n - sizeof(p), sp);
       bool take = false;
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(5))) {
         _latest = p;
         _have = true;
+        if (hasSpatial) {
+          _spatial = sp;
+          _haveSpatial = true;
+        }
         _lastRxMs = millis();
         _seq = p.seq;
         xSemaphoreGive(_mutex);

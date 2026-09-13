@@ -45,6 +45,11 @@ enum SceneSourceFlag : uint8_t {
   SFLAG_PILLARBOX     = 1u << 1,  // letter/pillarboxed (not edge-to-edge)
 };
 
+// Frame.flags lives in the 16-bit `flags` field. Bit 13 is reserved for the
+// spatial extension (a length-tagged block appended after this struct, see
+// SpatialBlock.h); it is kept out of SceneSourceFlag because that field is
+// only a byte.
+
 #pragma pack(push, 1)
 struct Frame {
   uint32_t magic = 0;
@@ -81,10 +86,10 @@ inline bool validFrame(const Frame& f, size_t bytes) {
 inline void packFrame(Frame& f, uint32_t seq, uint32_t hostMs, SceneKind scene,
                       SceneEvent ev, uint8_t conf, uint8_t lum, uint8_t h,
                       uint8_t s, uint8_t v, uint8_t motion, uint8_t progAudio,
-                      uint8_t sourceFlags) {
+                      uint8_t sourceFlags, uint16_t frameFlags = 0) {
   f.magic = kSceneMagic;
   f.version = kSceneVersion;
-  f.flags = 0;
+  f.flags = frameFlags;
   f.seq = seq;
   f.hostTimeMs = hostMs;
   f.sceneId = (uint8_t)scene;

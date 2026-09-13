@@ -66,6 +66,8 @@ void serializeStrip(JsonObject s, const StripConfig& c) {
   s["sensitivity"] = c.sensitivity;
   s["decay"] = c.decay;
   s["targetFps"] = c.targetFps;
+  s["roomX"] = c.roomX;
+  s["roomY"] = c.roomY;
   JsonArray zones = s["zones"].to<JsonArray>();
   for (int z = 0; z < c.zoneCount; ++z) {
     JsonObject zo = zones.add<JsonObject>();
@@ -101,6 +103,8 @@ void deserializeStrip(JsonObject s, StripConfig& c) {
   c.sensitivity = validFloat(s["sensitivity"]) ? clampFloat(s["sensitivity"].as<float>(), 0.0f, 10.0f) : c.sensitivity;
   c.decay = validFloat(s["decay"]) ? clampFloat(s["decay"].as<float>(), 0.0f, 1.0f) : c.decay;
   c.targetFps = clampInt(s["targetFps"] | c.targetFps, 1, 120);
+  c.roomX = validFloat(s["roomX"]) ? clampFloat(s["roomX"].as<float>(), 0.0f, 1.0f) : c.roomX;
+  c.roomY = validFloat(s["roomY"]) ? clampFloat(s["roomY"].as<float>(), 0.0f, 1.0f) : c.roomY;
   if (s["zones"].is<JsonArray>()) {
     JsonArray zones = s["zones"].as<JsonArray>();
     int zn = clampInt((int)zones.size(), 0, kMaxStripZones);
@@ -202,6 +206,11 @@ void serializeCinematic(JsonObject s, const cine::Config& c) {
   s["whisperDim"] = c.whisperDim;
   s["maxBrightness"] = c.maxBrightness;
   s["ambientFloor"] = c.ambientFloor;
+  s["roomMapping"] = c.roomMapping;
+  s["waveSpeed"] = c.waveSpeed;
+  s["waveDecay"] = c.waveDecay;
+  s["waveWidth"] = c.waveWidth;
+  s["maxWaves"] = c.maxWaves;
   s["receiveUdp"] = c.receiveUdp;
   s["group"] = c.group;
   s["port"] = c.port;
@@ -247,6 +256,17 @@ void deserializeCinematic(JsonObject s, cine::Config& c) {
   c.ambientFloor = validFloat(s["ambientFloor"])
                        ? clampFloat(s["ambientFloor"].as<float>(), 0.0f, 0.5f)
                        : c.ambientFloor;
+  c.roomMapping = s["roomMapping"] | c.roomMapping;
+  c.waveSpeed = validFloat(s["waveSpeed"])
+                    ? clampFloat(s["waveSpeed"].as<float>(), 0.5f, 5.0f)
+                    : c.waveSpeed;
+  c.waveDecay = validFloat(s["waveDecay"])
+                    ? clampFloat(s["waveDecay"].as<float>(), 0.1f, 2.0f)
+                    : c.waveDecay;
+  c.waveWidth = validFloat(s["waveWidth"])
+                    ? clampFloat(s["waveWidth"].as<float>(), 0.1f, 1.0f)
+                    : c.waveWidth;
+  c.maxWaves = clampInt(s["maxWaves"] | c.maxWaves, 4, 12);
   c.receiveUdp = s["receiveUdp"] | c.receiveUdp;
   strncpy(c.group, s["group"] | c.group, sizeof(c.group) - 1);
   c.port = clampInt(s["port"] | c.port, 1024, 65535);

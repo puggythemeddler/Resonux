@@ -34,6 +34,11 @@ struct StripConfig {
   float   sensitivity = 1.0f;
   float   decay = 0.0f;
   uint8_t targetFps = 60;
+  // Room position (0..1, x: left->right, y: top->bottom) used by the
+  // cinematic spatial mapping. Both default to centre; mapping only engages
+  // when the user switches cine::Config.roomMapping on.
+  float   roomX = 0.5f;
+  float   roomY = 0.5f;
 };
 
 enum FixtureProfileId : int {
