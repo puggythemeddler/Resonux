@@ -161,6 +161,11 @@ type CinematicConfig = {
   genre: number
   genreId?: string
   genreLabel?: string
+  comfort: number
+  comfortId?: string
+  comfortLabel?: string
+  syncOffsetMs: number
+  demo: boolean
   sensitivity: number
   reaction: number
   visualInfluence: number
@@ -210,6 +215,8 @@ type CinematicStatus = {
   moodEnergy: number
   recentEvents: number
   spatialActive?: boolean
+  linkLatencyMs?: number
+  jitterMs?: number
 }
 
 type CinematicData = {
@@ -218,6 +225,11 @@ type CinematicData = {
   active: boolean
   companionAlive: boolean
   status: CinematicStatus
+  companionSource?: string
+  companionSourceCount?: number
+  companionSkewPpm?: number
+  companionLastRxMs?: number
+  demoActive?: boolean
 }
 
 const baseBrightness = (t: Theme) =>
@@ -411,15 +423,40 @@ const CINE_GENRES = [
   { label: 'Anime', value: 2, hint: 'Snappy, bright, warm action' },
   { label: 'Automatic', value: 3, hint: 'Director derives the feel from the content' },
 ]
+const CINE_COMFORT = [
+  { label: 'Film', value: 0, hint: 'Gentle on the eyes: 0.5× flash, 2.2× gaps, 0.72× ceiling' },
+  { label: 'Standard', value: 1, hint: 'Baseline flash/gap/brightness' },
+  { label: 'Vivid', value: 2, hint: 'Livelier: 1.2× flash, 0.8× gaps' },
+  { label: 'Extreme', value: 3, hint: 'Maximum impact: 1.5× flash, 0.55× gaps' },
+]
+const CINE_QA_SCENES = [
+  { label: '—', value: 0 },
+  { label: 'Speech', value: 1 },
+  { label: 'Quiet', value: 2 },
+  { label: 'Action', value: 3 },
+  { label: 'Chase', value: 4 },
+  { label: 'Explosion', value: 5 },
+  { label: 'Music', value: 6 },
+]
+const CINE_QA_EVENTS = [
+  { label: 'None', value: 0 },
+  { label: 'Whisper', value: 1 },
+  { label: 'Flash', value: 2 },
+  { label: 'Boom', value: 3 },
+  { label: 'Dark', value: 4 },
+  { label: 'Scene cut', value: 5 },
+]
 
-function CinematicPanel({ data, err, onPatch, onReload }: {
+function CinematicPanel({ data, err, onPatch, onReload, onTest }: {
   data: CinematicData
   err: string
   onPatch: (patch: Record<string, unknown>) => void
   onReload: () => void
+  onTest: (e: { scene: number; event: number; confidence: number; lengthMs: number; focusX: number; focusY: number }) => void
 }) {
   const [draft, setDraft] = useState<CinematicConfig>(() => data.config)
   const timers = useRef<Record<string, number>>({})
+  const [qa, setQa] = useState({ scene: 3, event: 2, conf: 70, dwell: 800, focusX: -1, focusY: -1 })
 
   const debounce = (key: string, value: unknown, ms: number) => {
     if (timers.current[key] !== undefined) window.clearTimeout(timers.current[key])
@@ -509,6 +546,39 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
           {(CINE_GENRES.find((g) => g.value === c.genre)?.hint ?? '')}
         </p>
 
+        <div className="row">
+          <label>Comfort mode</label>
+          <select value={c.comfort} onChange={(e) => setField('comfort', Number(e.target.value))}>
+            {CINE_COMFORT.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          {(CINE_COMFORT.find((m) => m.value === c.comfort)?.hint ?? '')}
+        </p>
+
+        <div className="row">
+          <label>Audio/video sync offset</label>
+          <input type="range" min={-2000} max={2000} step={20} value={c.syncOffsetMs}
+            onChange={(e) => knob('syncOffsetMs', Number(e.target.value), 'syncOffsetMs')} />
+          <span>{c.syncOffsetMs} ms</span>
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Positive shifts the whole reaction later than the frame (video leads audio). Use when the
+          controller's audio analysis runs ahead of the picture on your display.
+        </p>
+        <div className="row">
+          <label>Demo loop (no companion)</label>
+          <input type="checkbox" checked={!!c.demo}
+            onChange={(e) => toggle('demo', e.target.checked)} />
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Runs a built-in 10 s scene/event script on loop so the whole pipeline (fusion, comfort,
+          room-mapping waves) can be seen without any source. Live frames and test bursts always take
+          priority and the loop resumes afterwards.
+        </p>
+
         <h4 style={{ marginTop: 12 }}>Reaction tuning</h4>
         {fields.map((f) => (
           <FieldSlider
@@ -577,6 +647,20 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
           <div className="stat"><div className="val">{s.sat}</div><div className="lbl">Sat</div></div>
           <div className="stat"><div className="val">{s.val}</div><div className="lbl">Val</div></div>
         </div>
+        <div className="stat-row">
+          <div className="stat"><div className="val">{s.linkLatencyMs ?? 0} ms</div><div className="lbl">Link latency</div></div>
+          <div className="stat"><div className="val">±{s.jitterMs ?? 0} ms</div><div className="lbl">Jitter</div></div>
+          <div className="stat"><div className="val">{data.companionSourceCount ?? 0}</div><div className="lbl">Sources</div></div>
+          <div className="stat"><div className="val">{(data.companionSkewPpm ?? 0)} ppm</div><div className="lbl">Skew</div></div>
+        </div>
+        {!!data.companionSource && (
+          <p className="muted" style={{ marginTop: 4 }}>
+            Active companion: <code>{data.companionSource}</code>
+            {data.companionSourceCount && data.companionSourceCount > 1
+              ? ` (${data.companionSourceCount} competing — the controller sticks to whichever keeps streaming)`
+              : ''}
+          </p>
+        )}
         <p className="muted">
           Boom/flash envelopes are cooldown-gated so loud music can never strobe; if the companion goes
           silent the controller falls back to its own audio analysis.
@@ -620,6 +704,58 @@ function CinematicPanel({ data, err, onPatch, onReload }: {
         <p className="muted">
           The device groups with <code>239.255.42.11:9772</code>. Restart the app on the controller after
           changing the multicast address or port.
+        </p>
+      </div>
+
+      <div className="card">
+        <h3>QA test burst</h3>
+        <p className="muted">
+          Injects one synthetic frame straight into the engine — no companion needed. It rides the same
+          fusion, comfort, cooldown and room-mapping path as a real feed; the engine reverts to the live
+          feed / device audio the moment it's spent. Great for verifying strobes, booms, wave travel and
+          sync offset.
+        </p>
+        {data.demoActive && <p className="ok">Test/demo script running right now.</p>}
+        <div className="row">
+          <label>Scene</label>
+          <select value={qa.scene} onChange={(e) => setQa((q) => ({ ...q, scene: Number(e.target.value) }))}>
+            {CINE_QA_SCENES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="row">
+          <label>Event</label>
+          <select value={qa.event} onChange={(e) => setQa((q) => ({ ...q, event: Number(e.target.value) }))}>
+            {CINE_QA_EVENTS.map((e) => (
+              <option key={e.value} value={e.value}>{e.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="row">
+          <label>Confidence</label>
+          <input type="range" min={5} max={100} value={qa.conf}
+            onChange={(e) => setQa((q) => ({ ...q, conf: Number(e.target.value) }))} />
+          <span>{qa.conf}%</span>
+        </div>
+        <div className="row">
+          <label>Dwell (ms)</label>
+          <input type="number" min={100} max={5000} step={100} value={qa.dwell}
+            onChange={(e) => setQa((q) => ({ ...q, dwell: Number(e.target.value) }))} />
+        </div>
+        <div className="row">
+          <label>Focus X / Y (wave origin, −1 = off)</label>
+          <input type="number" min={-1} max={100} value={qa.focusX}
+            onChange={(e) => setQa((q) => ({ ...q, focusX: Number(e.target.value) }))} />
+          <input type="number" min={-1} max={100} value={qa.focusY}
+            onChange={(e) => setQa((q) => ({ ...q, focusY: Number(e.target.value) }))} />
+        </div>
+        <div className="actions">
+          <button className="primary" onClick={() => onTest({ scene: qa.scene, event: qa.event, confidence: qa.conf, lengthMs: qa.dwell, focusX: qa.focusX, focusY: qa.focusY })}>Fire burst</button>
+        </div>
+        <p className="muted">
+          With room mapping on, a burst with X/Y focus spawns a real wave at that room position — set it
+          diagonally across the layout to watch it travel.
         </p>
       </div>
     </div>
@@ -1042,6 +1178,23 @@ export default function App() {
       setCineErr((e as Error).message)
     }
   }
+
+  const triggerTest = useCallback(async (e: { scene: number; event: number; confidence: number; lengthMs: number; focusX: number; focusY: number }) => {
+    try {
+      const r = await fetch('/api/cinematic/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(e),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        throw new Error((j && j.error) || 'HTTP ' + r.status)
+      }
+      setCineErr('')
+    } catch (e2) {
+      setCineErr((e2 as Error).message)
+    }
+  }, [])
 
   const openTheme = (t: Theme) => {
     const r = t.response ?? DEFAULT_RESP
@@ -1659,6 +1812,7 @@ export default function App() {
             err={cineErr}
             onPatch={saveCine}
             onReload={loadCinematic}
+            onTest={triggerTest}
           />
         ) : (
           <div className="card">

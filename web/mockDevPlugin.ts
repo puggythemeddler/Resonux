@@ -323,7 +323,8 @@ export default function mockDevPlugin(): Plugin {
     { key: 'dark', label: 'Dark' }, { key: 'change', label: 'Change' },
   ]
   let cineConfig: Record<string, unknown> = {
-    enabled: true, mode: 1, genre: 0, sensitivity: 1, reaction: 0.8,
+    enabled: true, mode: 1, genre: 0, comfort: 1, syncOffsetMs: 0, demo: false,
+    sensitivity: 1, reaction: 0.8,
     visualInfluence: 0.7, audioInfluence: 0.5, colorInfluence: 1, speed: 0.5,
     smoothing: 0.4, flashIntensity: 0.6, flashDurationMs: 180,
     flashMinGapMs: 90, boomCooldownMs: 450, whisperDim: 0.55, maxBrightness: 1,
@@ -331,7 +332,12 @@ export default function mockDevPlugin(): Plugin {
     waveWidth: 0.7, maxWaves: 8, receiveUdp: true, group: '239.255.42.11',
     port: 9772, staleMs: 1200,
   }
+  const CINE_COMFORT = [
+    { id: 'film', label: 'Film' }, { id: 'standard', label: 'Standard' },
+    { id: 'vivid', label: 'Vivid' }, { id: 'extreme', label: 'Extreme' },
+  ]
   let cineSeq = 1
+  let cineTestAt = 0
 
   // ---- device registry + audio source sim ----------------------------------
   const SOURCES = [
@@ -905,9 +911,22 @@ export default function mockDevPlugin(): Plugin {
             const event = CINE_EVENTS[eventI]
             json(res, 200, {
               ok: true,
-              config: { ...cineConfig, modeLabel: CINE_MODE_LABELS[mode], modeId: CINE_MODE_IDENTS[mode] },
+              config: {
+                ...cineConfig,
+                modeLabel: CINE_MODE_LABELS[mode], modeId: CINE_MODE_IDENTS[mode],
+                genreId: CINE_GENRES.find((g) => g.value === Number(cineConfig.genre))?.id ?? 'none',
+                genreLabel: CINE_GENRES.find((g) => g.value === Number(cineConfig.genre))?.label ?? 'None',
+                comfort: Number(cineConfig.comfort),
+                comfortId: CINE_COMFORT[Number(cineConfig.comfort)]?.id ?? 'standard',
+                comfortLabel: CINE_COMFORT[Number(cineConfig.comfort)]?.label ?? 'Standard',
+              },
               active: Boolean(cineConfig.enabled),
               companionAlive: true,
+              companionSource: '192.168.4.8:9772',
+              companionSourceCount: 1 + (Math.random() < 0.08 ? 1 : 0),
+              companionSkewPpm: Math.floor(Math.random() * 400) - 200,
+              companionLastRxMs: 20 + Math.floor(Math.random() * 60),
+              demoActive: Date.now() - cineTestAt < 1500,
               status: {
                 source: 2,
                 scene: sceneI + 1,
@@ -932,6 +951,8 @@ export default function mockDevPlugin(): Plugin {
                 moodEnergy: Math.round((0.2 + Math.random() * 0.7) * 100) / 100,
                 recentEvents: Math.floor(Math.random() * 5),
                 spatialActive: Boolean(cineConfig.roomMapping),
+                linkLatencyMs: 14 + Math.floor(Math.random() * 12),
+                jitterMs: 2 + Math.floor(Math.random() * 6),
               },
             })
             return
@@ -952,6 +973,9 @@ export default function mockDevPlugin(): Plugin {
               if (typeof body.enabled === 'boolean') cineConfig.enabled = body.enabled
               if (typeof body.mode === 'number' && body.applyPreset !== true) cineConfig.mode = Math.round(Number(body.mode)) % 5
               if (typeof body.genre === 'number') cineConfig.genre = Math.round(Number(body.genre)) % 4
+              if (typeof body.comfort === 'number') cineConfig.comfort = Math.max(0, Math.min(3, Math.round(Number(body.comfort))))
+              if (typeof body.syncOffsetMs === 'number') cineConfig.syncOffsetMs = Math.max(-2000, Math.min(2000, Math.round(Number(body.syncOffsetMs))))
+              if (typeof body.demo === 'boolean') cineConfig.demo = body.demo
               if (typeof body.receiveUdp === 'boolean') cineConfig.receiveUdp = body.receiveUdp
               if (typeof body.roomMapping === 'boolean') cineConfig.roomMapping = body.roomMapping
               if (typeof body.group === 'string' && body.group) cineConfig.group = body.group
@@ -960,6 +984,16 @@ export default function mockDevPlugin(): Plugin {
             return
           }
           json(res, 405, { ok: false, error: 'method not allowed' })
+          return
+        }
+
+        if (url === '/api/cinematic/test') {
+          readJson((body) => {
+            const scene = Math.max(0, Math.min(6, Math.round(Number(body.scene ?? 0))))
+            const event = Math.max(0, Math.min(5, Math.round(Number(body.event ?? 0))))
+            cineTestAt = Date.now()
+            json(res, 200, { ok: true, accepted: { scene, event } })
+          })
           return
         }
 
