@@ -1,7 +1,9 @@
 #pragma once
 #include "cinema/CinematicConfig.h"
+#include "cinema/CinematicDirector.h"
 #include "cinema/SceneAnalyzer.h"
 #include "cinema/SceneFrame.h"
+#include "cinema/SceneMemory.h"
 #include "util/Rgb.h"
 #include <stdint.h>
 #include <math.h>
@@ -41,6 +43,10 @@ struct Status {
   float tension = 0.0f;
   uint32_t lastFrameMs = 0;  // local time of the last accepted SceneFrame
   bool companionAlive = false;
+  // intent layer (spec §17)
+  Mood mood = MOOD_CALM;
+  float moodEnergy = 0.0f;
+  uint8_t recentEvents = 0;
 };
 
 // Modulation target, produced once per LED frame and handed to the theme
@@ -121,6 +127,11 @@ class CinematicEngine {
   float _dark = 0.0f;
   uint32_t _lastFlashStartMs = 0;
   uint32_t _lastBoomStartMs = 0;
+
+  // scene memory + intent (spec §1, §17)
+  SceneMemory _memory;
+  CinematicDirector _director;
+  CinematicIntent _intent;
 };
 
 inline Status CinematicEngine::update(const AudioFeatures& audio,
@@ -251,6 +262,14 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
     _vMotion += (((float)_last.motion / 255.0f) - _vMotion) * kS;
   }
 
+  _memory.feed(videoActive ? sceneKind : sceneframe::SCENE_UNDEFINED,
+               videoActive ? ev : sceneframe::SEVENT_NONE,
+               videoActive ? conf : 0,
+               videoActive ? _last.avgLuminance : 0, nowMs);
+  SceneContext mctx = _memory.context();
+  _intent = _director.compute(mctx, audio, videoActive ? &_last : nullptr,
+                              _cfg, nowMs);
+
   buildLook(audio, videoActive, src, sceneKind, conf, dt);
 
   // ---- status --------------------------------------------------------------
@@ -259,6 +278,9 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
   _status.event = ev;
   _status.eventConfidence = conf;
   _status.sceneConfidence = videoActive ? conf : 0;
+  _status.mood = _intent.mood;
+  _status.moodEnergy = _intent.energy;
+  _status.recentEvents = mctx.recentEventCount;
   _status.luminance = (uint8_t)(cl01(_vLum) * 255.0f);
   _status.motion = (uint8_t)(cl01(_vMotion) * 255.0f);
   _status.progAudio = videoActive ? _last.progAudio : 0;
@@ -298,6 +320,15 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
   movement = cl01(movement + level * 0.35f);
   if (audio.beat) pulse = cl01(pulse + audio.beatStrength * 0.35f * _cfg.audioInfluence);
   if (level > 0.0f) pulse = cl01(pulse + level * 0.10f);
+  // Director pacing: mood-appropriate pulse depth (never below zero)
+  pulse *= _intent.pulseDepth;
+
+  // Director warmth nudge: a small hue lean toward the mood's warm/cool target
+  // (always clamped, only when a scene is actually present)
+  if (videoActive && sceneKind != sceneframe::SCENE_UNDEFINED) {
+    const float warmTarget = 0.66f - 0.59f * _intent.tintWarmth;
+    hueShift = lerpHue(hueShift, warmTarget, 0.04f);
+  }
 
   // video dominant colour -> tint + gentle hue lean
   float tintMix = 0.0f;
@@ -343,10 +374,13 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
     movement *= (1.0f - tension * 0.40f);
   }
 
-  // flash: brightness rides to the ceiling, then the envelope decays
+  // flash: brightness rides to the ceiling, then the envelope decays.
+  // The Director's flashScale suppresses it in calm/suspense moods; it never
+  // exceeds 1.0 so the ceiling bound is preserved.
   if (_flash > 0.01f) {
-    brightness = brightness + (_cfg.maxBrightness - brightness) * cl01(_flash * 0.9f);
-    saturation *= (1.0f - _flash * 0.15f);
+    const float fs = _flash * _intent.flashScale;
+    brightness = brightness + (_cfg.maxBrightness - brightness) * cl01(fs * 0.9f);
+    saturation *= (1.0f - fs * 0.15f);
   }
   // boom: split-second dip before the flash for contrast
   if (_boom > 0.01f) brightness *= (1.0f - _boom * 0.12f);
@@ -383,7 +417,7 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
   lk.hueShift = cl01(hueShift);
   lk.movement = cl01(movement);
   lk.pulse = cl01(pulse);
-  lk.flash = cl01(_flash);
+  lk.flash = cl01(_flash * _intent.flashScale);
   lk.impact = cl01(_boom);
   lk.calm = cl01(calm);
   lk.tintMix = cl01(tintMix);

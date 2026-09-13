@@ -3,9 +3,11 @@
 #include "audio/AudioFrame.h"
 #include "cinema/CinematicApply.h"
 #include "cinema/CinematicConfig.h"
+#include "cinema/CinematicDirector.h"
 #include "cinema/CinematicEngine.h"
 #include "cinema/SceneAnalyzer.h"
 #include "cinema/SceneFrame.h"
+#include "cinema/SceneMemory.h"
 
 using namespace cine;
 using namespace sceneframe;
@@ -510,6 +512,218 @@ void test_apply_to_theme_frame() {
   TEST_ASSERT_TRUE(th.primary.b < 40);
 }
 
+// ---------------------------------------------------------------- scene memory
+void test_memory_labels_and_genre_auto() {
+  TEST_ASSERT_EQUAL_STRING("subtle", modeIdent(MODE_SUBTLE));
+  TEST_ASSERT_EQUAL_STRING("Gentle", modeLabel(MODE_SUBTLE));
+  TEST_ASSERT_EQUAL_STRING("auto", genreIdent(GENRE_AUTO));
+  TEST_ASSERT_EQUAL_STRING("Automatic", genreLabel(GENRE_AUTO));
+  TEST_ASSERT_EQUAL_STRING("suspense", moodIdent(MOOD_SUSPENSE));
+  TEST_ASSERT_EQUAL_STRING("Tension", moodLabel(MOOD_TENSION));
+  TEST_ASSERT_EQUAL_INT(MOOD_PERFORMANCE, MOOD_COUNT - 1);
+}
+
+void test_memory_hysteresis_switches_after_repeated_votes() {
+  SceneMemory m;
+  uint32_t now = 0;
+  auto feed = [&](sceneframe::SceneKind k, uint32_t& n) { m.feed(k, sceneframe::SEVENT_NONE, 80, 120, n); n += 16; };
+
+  for (int i = 0; i < 5; ++i) feed(sceneframe::SCENE_SPEECH, now);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_SPEECH, (int)m.context().current);
+
+  // two sporadic ACTION votes do not flip the classification
+  feed(sceneframe::SCENE_ACTION, now);
+  feed(sceneframe::SCENE_ACTION, now);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_SPEECH, (int)m.context().current);
+
+  // the third consecutive vote flips it
+  feed(sceneframe::SCENE_ACTION, now);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_ACTION, (int)m.context().current);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_SPEECH, (int)m.context().previous);
+}
+
+void test_memory_change_event_bypasses_hysteresis() {
+  SceneMemory m;
+  uint32_t now = 0;
+  for (int i = 0; i < 5; ++i) { m.feed(sceneframe::SCENE_SPEECH, sceneframe::SEVENT_NONE, 80, 120, now); now += 16; }
+  m.feed(sceneframe::SCENE_CHASE, sceneframe::SEVENT_CHANGE, 90, 200, now);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_CHASE, (int)m.context().current);
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_SPEECH, (int)m.context().previous);
+}
+
+void test_memory_dwell_and_transition_timers() {
+  SceneMemory m;
+  uint32_t now = 0;
+  for (int i = 0; i < 5; ++i) { m.feed(sceneframe::SCENE_SPEECH, sceneframe::SEVENT_NONE, 80, 120, now); now += 16; }
+  for (int i = 0; i < 10; ++i) { m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_NONE, 80, 120, now); now += 16; }
+  SceneContext c = m.context();
+  TEST_ASSERT_EQUAL_INT(sceneframe::SCENE_ACTION, (int)c.current);
+  TEST_ASSERT(c.dwellMs > 100);
+  TEST_ASSERT(c.sinceTransitionMs > 100);
+}
+
+void test_memory_energy_rises_with_events_and_decays() {
+  SceneMemory m;
+  uint32_t now = 0;
+  for (int i = 0; i < 20; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 5, now); now += 16; }
+  SceneContext a = m.context();
+  TEST_ASSERT(a.moodEnergy < 0.2f);
+  TEST_ASSERT_FALSE(a.risingEnergy);
+  TEST_ASSERT_EQUAL_UINT8(0, a.recentEventCount);
+
+  // a boom event with bright luminance pushes energy up
+  m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_BOOM, 90, 200, now);
+  now += 16;
+  m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_BOOM, 90, 200, now);
+  SceneContext b = m.context();
+  TEST_ASSERT(b.moodEnergy > a.moodEnergy);
+  TEST_ASSERT_TRUE(b.risingEnergy);
+  TEST_ASSERT(b.recentEventCount >= 1);
+
+  // long quiet decays energy and ages the events out of the window
+  for (int i = 0; i < 500; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 5, now); now += 16; }
+  SceneContext c = m.context();
+  TEST_ASSERT(c.moodEnergy < b.moodEnergy);
+  TEST_ASSERT_EQUAL_UINT8(0, c.recentEventCount);
+}
+
+void test_memory_ring_bounded_and_coalesced() {
+  SceneMemory m;
+  uint32_t now = 0;
+  // 30 distinct events, spaced > 250 ms apart -> ring saturates at depth
+  for (int i = 0; i < 30; ++i) { m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_BOOM, 90, 200, now); now += 300; }
+  TEST_ASSERT(m.count() <= kSceneMemoryDepth);
+
+  SceneMemory c;
+  c.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_BOOM, 90, 200, now);
+  now += 100;
+  c.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_BOOM, 90, 200, now);
+  TEST_ASSERT_EQUAL_INT(1, c.count());  // coalesced, no ring spam
+}
+
+// ---------------------------------------------------------------- director
+void test_director_mood_cascade() {
+  Config cfg;
+  defaultConfig(cfg);
+  AudioFeatures a;
+  a.level = 0.2f;
+  a.tension = 0.5f;
+  SceneMemory m;
+  CinematicDirector dir;
+  uint32_t now = 0;
+
+  // phase 1: quiet dark -> calm
+  for (int i = 0; i < 10; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 5, now); now += 16; }
+  TEST_ASSERT_EQUAL_INT(MOOD_CALM, (int)dir.compute(m.context(), a, nullptr, cfg, now).mood);
+
+  // phase 2: whisper build -> suspense/tension
+  for (int i = 0; i < 30; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_WHISPER, 70, 60, now); now += 16; }
+  Mood built = dir.compute(m.context(), a, nullptr, cfg, now).mood;
+  TEST_ASSERT_TRUE(built == MOOD_SUSPENSE || built == MOOD_TENSION);
+
+  // phase 3: flash -> impact
+  Frame fl = videoFrame(2u, now, sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 200, 40, 180, 180, 200);
+  m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 200, now);
+  TEST_ASSERT_EQUAL_INT(MOOD_IMPACT, (int)dir.compute(m.context(), a, &fl, cfg, now).mood);
+
+  // phase 4: aftermath shortly after the impact (hold lasts 400 ms, so keep
+  // feeding quietly past it before expecting the mood to relax)
+  Frame calm2 = videoFrame(3u, now, sceneframe::SCENE_ACTION, sceneframe::SEVENT_NONE, 0, 200, 40, 180, 180, 40);
+  for (int i = 0; i < 30; ++i) { now += 16; m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_NONE, 0, 120, now); }
+  Mood post = dir.compute(m.context(), a, &calm2, cfg, now).mood;
+  TEST_ASSERT_TRUE(post == MOOD_AFTERMATH || post == MOOD_CALM);
+
+  // phase 5: long quiet returns to calm
+  for (int i = 0; i < 200; ++i) { now += 16; m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 5, now); }
+  TEST_ASSERT_EQUAL_INT(MOOD_CALM, (int)dir.compute(m.context(), a, nullptr, cfg, now).mood);
+}
+
+void test_director_hold_prevents_flicker() {
+  Config cfg;
+  defaultConfig(cfg);
+  AudioFeatures a;
+  a.level = 0.15f;
+  SceneMemory m;
+  CinematicDirector dir;
+  uint32_t now = 1000;
+
+  for (int i = 0; i < 10; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 5, now); now += 16; }
+  TEST_ASSERT_EQUAL_INT(MOOD_CALM, (int)dir.compute(m.context(), a, nullptr, cfg, now).mood);
+
+  // a lift toward SUSPENSE arrives inside the 250 ms hold: a luminance ramp
+  // keeps energy climbing every tick, but the hold keeps us CALM until it elapses
+  now = 1300;
+  int lum = 60;
+  for (int i = 0; i < 4; ++i) {
+    m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_WHISPER, 70, (uint8_t)lum, now);
+    lum += 30;
+    now += 16;
+  }
+  Mood gated = dir.compute(m.context(), a, nullptr, cfg, now).mood;
+  TEST_ASSERT_EQUAL_INT(MOOD_CALM, (int)gated);
+
+  // after the hold expires the lift lands
+  now = 1500;
+  m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_WHISPER, 70, 210, now);
+  Mood switched = dir.compute(m.context(), a, nullptr, cfg, now).mood;
+  TEST_ASSERT_EQUAL_INT(MOOD_SUSPENSE, (int)switched);
+
+  // a discrete IMPACT punches straight through the hold — never late, never dropped
+  Frame fl = videoFrame(2u, now, sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 200, 40, 180, 180, 200);
+  m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 200, now + 30);
+  Mood punched = dir.compute(m.context(), a, &fl, cfg, now + 30).mood;
+  TEST_ASSERT_EQUAL_INT(MOOD_IMPACT, (int)punched);
+}
+
+void test_director_genre_auto_stays_bounded() {
+  Config cfg;
+  defaultConfig(cfg);
+  cfg.genre = GENRE_AUTO;
+  AudioFeatures a;
+  a.level = 0.2f;
+  a.tension = 0.8f;
+  SceneMemory m;
+  CinematicDirector dir;
+  uint32_t now = 0;
+  for (int i = 0; i < 30; ++i) { m.feed(sceneframe::SCENE_QUIET, sceneframe::SEVENT_NONE, 0, 40, now); now += 16; }
+  CinematicIntent in = dir.compute(m.context(), a, nullptr, cfg, now);
+  TEST_ASSERT(in.mood >= MOOD_CALM && in.mood < MOOD_COUNT);
+  TEST_ASSERT(in.flashScale > 0.0f && in.flashScale <= 1.0f);
+  TEST_ASSERT(in.pulseDepth > 0.0f && in.pulseDepth <= 1.5f);
+}
+
+void test_director_flash_scale_never_exceeds_one() {
+  Config cfg;
+  defaultConfig(cfg);
+  AudioFeatures a;
+  a.level = 0.3f;
+  SceneMemory m;
+  CinematicDirector dir;
+  uint32_t now = 0;
+  // drive toward high-energy action and confirm the ceiling holds
+  for (int i = 0; i < 40; ++i) { m.feed(sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 240, now); now += 16; }
+  Frame fl = videoFrame(1u, now, sceneframe::SCENE_ACTION, sceneframe::SEVENT_FLASH, 100, 240, 40, 180, 180, 240);
+  CinematicIntent in = dir.compute(m.context(), a, &fl, cfg, now);
+  TEST_ASSERT(in.flashScale <= 1.0f);
+}
+
+void test_engine_status_exposes_intent() {
+  Config c;
+  defaultConfig(c);
+  CinematicEngine eng;
+  eng.configure(c);
+
+  uint32_t now = 0;
+  Frame v = videoFrame(1u, now, sceneframe::SCENE_EXPLOSION, sceneframe::SEVENT_BOOM, 100, 255, 30, 200, 200, 255);
+  eng.update(quietAudio(), &v, now);
+  now += 16;
+  eng.update(quietAudio(), &v, now);
+
+  TEST_ASSERT_EQUAL_INT(MOOD_IMPACT, (int)eng.status().mood);
+  TEST_ASSERT(eng.status().moodEnergy >= 0.0f && eng.status().moodEnergy <= 1.0f);
+  TEST_ASSERT(eng.status().recentEvents >= 1);
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------- main
@@ -538,5 +752,16 @@ int main(int argc, char** argv) {
   RUN_TEST(test_engine_genre_horror_dims);
   RUN_TEST(test_engine_source_enum_ordering);
   RUN_TEST(test_apply_to_theme_frame);
+  RUN_TEST(test_memory_labels_and_genre_auto);
+  RUN_TEST(test_memory_hysteresis_switches_after_repeated_votes);
+  RUN_TEST(test_memory_change_event_bypasses_hysteresis);
+  RUN_TEST(test_memory_dwell_and_transition_timers);
+  RUN_TEST(test_memory_energy_rises_with_events_and_decays);
+  RUN_TEST(test_memory_ring_bounded_and_coalesced);
+  RUN_TEST(test_director_mood_cascade);
+  RUN_TEST(test_director_hold_prevents_flicker);
+  RUN_TEST(test_director_genre_auto_stays_bounded);
+  RUN_TEST(test_director_flash_scale_never_exceeds_one);
+  RUN_TEST(test_engine_status_exposes_intent);
   return UNITY_END();
 }

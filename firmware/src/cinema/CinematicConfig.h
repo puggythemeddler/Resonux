@@ -20,10 +20,15 @@ enum Mode : int {
 };
 
 // Genre overlays (spec §21) — thin behaviour + tint tuning on top of a mode.
+// GENRE_AUTO lets the Director pick the overlay from scene memory + audio
+// (tension-heavy content behaves horror-like, high-energy content anime-like,
+// everything else neutral). It only biases pacing/flash/pulse — see
+// CinematicDirector.
 enum Genre : int {
   GENRE_NONE = 0,
   GENRE_HORROR,
   GENRE_ANIME,
+  GENRE_AUTO,
   GENRE_COUNT,
 };
 
@@ -184,7 +189,7 @@ inline const char* modeIdent(int m) {
 
 inline const char* modeLabel(int m) {
   switch (m) {
-    case MODE_SUBTLE: return "Subtle";
+    case MODE_SUBTLE: return "Gentle";
     case MODE_IMMERSIVE: return "Immersive";
     case MODE_DYNAMIC: return "Dynamic";
     case MODE_EXTREME: return "Extreme";
@@ -196,6 +201,7 @@ inline const char* genreIdent(int g) {
   switch (g) {
     case GENRE_HORROR: return "horror";
     case GENRE_ANIME: return "anime";
+    case GENRE_AUTO: return "auto";
     default: return "none";
   }
 }
@@ -204,6 +210,7 @@ inline const char* genreLabel(int g) {
   switch (g) {
     case GENRE_HORROR: return "Horror";
     case GENRE_ANIME: return "Anime";
+    case GENRE_AUTO: return "Automatic";
     default: return "None";
   }
 }
