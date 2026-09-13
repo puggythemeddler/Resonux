@@ -32,10 +32,59 @@ enum Genre : int {
   GENRE_COUNT,
 };
 
+// Comfort tiers (spec: comfort modes). A light-touch safety/parental layer that
+// sits ON TOP of the reaction presets: it only throttles the strobe/impulse
+// risk (flash ceiling, min gap, boom gap, brightness ceiling). The mode/granular
+// knobs stay as configured, so Comfort is additive — Film calm is NOT "subtle
+// mode", it is "balanced/immersive but without the seizure risk".
+enum ComfortMode : int {
+  COMFORT_FILM = 0,     // dimmer, gapped, gentle — babies/sleepers/now TV
+  COMFORT_STANDARD,     // shipped default, direct mapping to the knobs
+  COMFORT_VIVID,        // punchier impulses, tighter gaps
+  COMFORT_EXTREME,      // full impulse energy, strobe risk acknowledged
+  COMFORT_COUNT,
+};
+
+// Per-tier comfort multipliers, applied by the engine at reaction time.
+// Returns the flash-ceiling scale (0..~1.6).
+inline float comfortFlashScale(int c) {
+  switch (c) {
+    case COMFORT_FILM: return 0.5f;
+    case COMFORT_VIVID: return 1.2f;
+    case COMFORT_EXTREME: return 1.5f;
+    default: return 1.0f;
+  }
+}
+// Multiplier applied to flashMinGapMs / boomCooldownMs (>1 = safer/gappier).
+inline float comfortGapScale(int c) {
+  switch (c) {
+    case COMFORT_FILM: return 2.2f;
+    case COMFORT_VIVID: return 0.8f;
+    case COMFORT_EXTREME: return 0.55f;
+    default: return 1.0f;
+  }
+}
+// Multiplier applied to the modulation brightness ceiling.
+inline float comfortBrightnessScale(int c) {
+  switch (c) {
+    case COMFORT_FILM: return 0.72f;
+    case COMFORT_VIVID: return 1.0f;
+    case COMFORT_EXTREME: return 1.0f;
+    default: return 1.0f;
+  }
+}
+
 struct Config {
   bool      enabled = false;       // master on/off for the whole mode
   int       mode = MODE_BALANCED;
   int       genre = GENRE_NONE;
+  int       comfort = COMFORT_STANDARD;  // comfort tier (additive, see above)
+
+  // AV sync (spec: sync offset). Positive delays event envelopes so the light
+  // lands on the audio/visual beat (for sink pipelines that output late);
+  // negative pushes them earlier (to lead a lagging screen). Applied to the
+  // flash/boom envelopes only — scene memory and staleness are unaffected.
+  int16_t   syncOffsetMs = 0;     // -2000..+2000
 
   // reaction
   float     sensitivity = 1.0f;    // 0.25..3 input gain multiplier
@@ -75,6 +124,10 @@ inline void clampConfig(Config& c) {
   if (c.mode >= MODE_COUNT) c.mode = MODE_COUNT - 1;
   if (c.genre < 0) c.genre = GENRE_NONE;
   if (c.genre >= GENRE_COUNT) c.genre = GENRE_COUNT - 1;
+  if (c.comfort < 0) c.comfort = COMFORT_FILM;
+  if (c.comfort >= COMFORT_COUNT) c.comfort = COMFORT_COUNT - 1;
+  if (c.syncOffsetMs < -2000) c.syncOffsetMs = -2000;
+  if (c.syncOffsetMs > 2000) c.syncOffsetMs = 2000;
 
   auto cl = [](float& v, float lo, float hi) {
     if (v < lo) v = lo;
@@ -229,6 +282,24 @@ inline const char* genreLabel(int g) {
     case GENRE_ANIME: return "Anime";
     case GENRE_AUTO: return "Automatic";
     default: return "None";
+  }
+}
+
+inline const char* comfortIdent(int cf) {
+  switch (cf) {
+    case COMFORT_FILM: return "film";
+    case COMFORT_VIVID: return "vivid";
+    case COMFORT_EXTREME: return "extreme";
+    default: return "standard";
+  }
+}
+
+inline const char* comfortLabel(int cf) {
+  switch (cf) {
+    case COMFORT_FILM: return "Film calm";
+    case COMFORT_VIVID: return "Vivid";
+    case COMFORT_EXTREME: return "Extreme flicker";
+    default: return "Standard";
   }
 }
 

@@ -45,6 +45,9 @@ struct Status {
   float tension = 0.0f;
   uint32_t lastFrameMs = 0;  // local time of the last accepted SceneFrame
   bool companionAlive = false;
+  // AV-sync / link observability (spec: sync offset + latency)
+  int16_t linkLatencyMs = 0;  // one-way companion->receiver estimate smoothed
+  int16_t jitterMs = 0;       // smoothed frame-arrival interval jitter
   // intent layer (spec §17)
   Mood mood = MOOD_CALM;
   float moodEnergy = 0.0f;
@@ -116,7 +119,20 @@ class CinematicEngine {
  private:
   void buildLook(const AudioFeatures& audio, bool videoActive,
                  EngineSource src, sceneframe::SceneKind sceneKind,
-                 uint8_t conf, uint32_t dt);
+                 uint8_t conf, uint32_t nowMs);
+
+  // Hold-until `startMs`, then exponential decay at `kPer16Ms` per 16 ms tick.
+  // A start in the future (positive sync offset) parks the envelope on full
+  // hold; a past start (negative offset) means it is already decaying.
+  static void advanceEnvelope(float& v, uint32_t& durMs,
+                              const uint32_t startMs, uint32_t nowMs,
+                              uint32_t dt, float kPer16Ms) {
+    if (v <= 0.0f) return;
+    const int32_t rel = (int32_t)(nowMs - startMs);
+    if (rel < 0) return;                       // not yet scheduled
+    if ((int32_t)durMs - rel > 0) return;      // still in the hold window
+    v *= (1.0f - kPer16Ms * (dt / 16.0f));
+  }
 
   Config _cfg;
   Look _look;
@@ -130,15 +146,25 @@ class CinematicEngine {
   // smoothed video fields
   float _vHue = 0.0f, _vSat = 0.0f, _vVal = 0.0f, _vLum = 0.0f, _vMotion = 0.0f;
 
-  // envelopes
+  // envelopes. `StartMs` is the wall-clock instant the envelope's hold phase
+  // begins decaying: syncOffsetMs>0 defers it (light lands on the AV beat),
+  // syncOffsetMs<0 makes it already-running (the envelope leads the event).
   float _flash = 0.0f;
-  uint32_t _flashHoldMs = 0;
+  uint32_t _flashDurMs = 0;
+  uint32_t _flashStartMs = 0;
   float _boom = 0.0f;
-  uint32_t _boomHoldMs = 0;
+  uint32_t _boomDurMs = 0;
+  uint32_t _boomStartMs = 0;
   float _calm = 0.0f;
   float _dark = 0.0f;
   uint32_t _lastFlashStartMs = 0;
   uint32_t _lastBoomStartMs = 0;
+
+  // AV-sync / link observability (spec: sync offset + latency)
+  uint32_t _lastHostMs = 0;    // last frame's companion clock
+  uint32_t _lastLocalMs = 0;   // local time of that frame's acceptance
+  int16_t _linkLatencyMs = 0;
+  int16_t _jitterMs = 0;
 
   // scene memory + intent (spec §1, §17)
   SceneMemory _memory;
@@ -173,6 +199,23 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
     _last = *scene;
     _haveFrame = true;
     _lastFrameMs = nowMs;
+    // AV-sync observability: companion hostTimeMs advances with the companion
+    // clock, so (local arrival delta - host delta)/2 is a one-way link latency
+    // estimate, independent of absolute skew. Jitter is |est - smoothed|.
+    if (_lastLocalMs) {
+      const int32_t dl = (int32_t)(nowMs - _lastLocalMs);
+      const int32_t dh = (int32_t)((int64_t)_last.hostTimeMs - (int64_t)_lastHostMs);
+      const int32_t est =
+          (dl > 0 && dh >= 0 && dh <= dl) ? (dl - dh) / 2 : 0;
+      if (dl > 0) {
+        _linkLatencyMs = (int16_t)((_linkLatencyMs * 3 + est) / 4);
+        int32_t j = est - _linkLatencyMs;
+        if (j < 0) j = -j;
+        _jitterMs = (int16_t)((_jitterMs * 3 + j) / 4);
+      }
+    }
+    _lastHostMs = _last.hostTimeMs;
+    _lastLocalMs = nowMs;
   }
 
   const uint32_t stale = _cfg.staleMs;
@@ -205,24 +248,31 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
   const bool mapping = _cfg.roomMapping;
 
   // cooldown helpers: a zero timestamp means "never fired" (sentinel drives the
-  // gap to infinity so the first event always passes)
+  // gap to infinity so the first event always passes). The comfort tier scales
+  // the impulse gaps so Film calm is never strobe-adjacent (spec: comfort).
   const uint32_t sinceFlash = _lastFlashStartMs == 0
                                   ? 0xFFFFFFFFu
                                   : nowMs - _lastFlashStartMs;
   const uint32_t sinceBoom =
       _lastBoomStartMs == 0 ? 0xFFFFFFFFu : nowMs - _lastBoomStartMs;
+  const float cGap = cine::comfortGapScale(_cfg.comfort);
+  const uint32_t boomGapMs = (uint32_t)(_cfg.boomCooldownMs * cGap);
+  const uint32_t flashGapMs = (uint32_t)(_cfg.flashMinGapMs * cGap);
+  const int32_t syncOff = _cfg.syncOffsetMs;
 
   // ---- react to video events ----------------------------------------------
   if (videoActive && ev != sceneframe::SEVENT_NONE && conf > 0) {
     const float weight = (float)conf / 100.0f * _cfg.reaction * sens;
     switch (ev) {
       case sceneframe::SEVENT_BOOM:
-        if (sinceBoom >= _cfg.boomCooldownMs) {
+        if (sinceBoom >= boomGapMs) {
           _lastBoomStartMs = nowMs;
           _flash = _cfg.flashIntensity * weight;
-          _flashHoldMs = _cfg.flashDurationMs;
+          _flashDurMs = _cfg.flashDurationMs;
+          _flashStartMs = (uint32_t)((int64_t)nowMs + syncOff);
           _boom = weight;
-          _boomHoldMs = _cfg.flashDurationMs + 60u;
+          _boomDurMs = _cfg.flashDurationMs + 60u;
+          _boomStartMs = (uint32_t)((int64_t)nowMs + syncOff);
           if (mapping) {
             _waveField.spawn(fx, fy, cl01(weight), _cfg.waveSpeed,
                              _cfg.waveDecay, _cfg.waveWidth, nowMs);
@@ -230,10 +280,11 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
         }
         break;
       case sceneframe::SEVENT_FLASH:
-        if (sinceFlash >= _cfg.flashMinGapMs) {
+        if (sinceFlash >= flashGapMs) {
           _lastFlashStartMs = nowMs;
           _flash = _cfg.flashIntensity * weight;
-          _flashHoldMs = _cfg.flashDurationMs;
+          _flashDurMs = _cfg.flashDurationMs;
+          _flashStartMs = (uint32_t)((int64_t)nowMs + syncOff);
           if (mapping) {
             _waveField.spawn(fx, fy, cl01(weight) * 0.7f, _cfg.waveSpeed,
                              _cfg.waveDecay, _cfg.waveWidth, nowMs);
@@ -283,20 +334,23 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
 
   // ---- react to local audio -----------------------------------------------  // sustained-loud music pulses but must not re-trigger as booms
   const float aw = _cfg.audioInfluence * sens;
-  if (audio.boom > 0.01f && sinceBoom >= _cfg.boomCooldownMs) {
+  if (audio.boom > 0.01f && sinceBoom >= boomGapMs) {
     _lastBoomStartMs = nowMs;
     _flash = _cfg.flashIntensity * aw * audio.boom * 0.8f;
-    _flashHoldMs = _cfg.flashDurationMs;
+    _flashDurMs = _cfg.flashDurationMs;
+    _flashStartMs = (uint32_t)((int64_t)nowMs + syncOff);
     _boom = audio.boom * aw;
-    _boomHoldMs = _cfg.flashDurationMs + 60u;
+    _boomDurMs = _cfg.flashDurationMs + 60u;
+    _boomStartMs = (uint32_t)((int64_t)nowMs + syncOff);
     if (mapping) {
       _waveField.spawn(fx, fy, cl01(aw * audio.boom) * 0.8f, _cfg.waveSpeed,
                        _cfg.waveDecay, _cfg.waveWidth, nowMs);
     }
-  } else if (audio.impact > 0.01f && sinceFlash >= _cfg.flashMinGapMs) {
+  } else if (audio.impact > 0.01f && sinceFlash >= flashGapMs) {
     _lastFlashStartMs = nowMs;
     _flash = _cfg.flashIntensity * aw * audio.impact * 0.6f;
-    _flashHoldMs = (uint16_t)(_cfg.flashDurationMs * 0.7f);
+    _flashDurMs = (uint16_t)(_cfg.flashDurationMs * 0.7f);
+    _flashStartMs = (uint32_t)((int64_t)nowMs + syncOff);
   }
   if (audio.whisper) _calm += 0.010f * dt * aw;
   if (audio.silence) {
@@ -304,19 +358,12 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
     _dark += 0.004f * dt;
   }
 
-  // ---- envelope decay ------------------------------------------------------
-  if (_flashHoldMs) {
-    if (_flashHoldMs > dt) _flashHoldMs -= dt;
-    else _flashHoldMs = 0;
-  } else {
-    _flash *= (1.0f - 0.020f * (dt / 16.0f));
-  }
-  if (_boomHoldMs) {
-    if (_boomHoldMs > dt) _boomHoldMs -= dt;
-    else _boomHoldMs = 0;
-  } else {
-    _boom *= (1.0f - 0.035f * (dt / 16.0f));
-  }
+  // ---- envelope advance (hold -> decay, anchored to a scheduled start) -----
+  // A frame's envelope holds on the scheduled start (nowMs + syncOffsetMs) and
+  // only starts decaying once that instant passes; a negative offset makes the
+  // envelope already-running, so it leads the event instead of lagging it.
+  advanceEnvelope(_flash, _flashDurMs, _flashStartMs, nowMs, dt, 0.020f);
+  advanceEnvelope(_boom, _boomDurMs, _boomStartMs, nowMs, dt, 0.035f);
   _calm *= (1.0f - 0.004f * (dt / 16.0f));
   _dark *= (1.0f - 0.010f * (dt / 16.0f));
   if (_flash < 0.01f) _flash = 0.0f;
@@ -342,7 +389,7 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
   _intent = _director.compute(mctx, audio, videoActive ? &_last : nullptr,
                               _cfg, nowMs);
 
-  buildLook(audio, videoActive, src, sceneKind, conf, dt);
+  buildLook(audio, videoActive, src, sceneKind, conf, nowMs);
 
   // ---- status --------------------------------------------------------------
   _status.source = src;
@@ -365,21 +412,31 @@ inline Status CinematicEngine::update(const AudioFeatures& audio,
   _status.lastFrameMs = _lastFrameMs;
   _status.companionAlive = videoActive;
   _status.spatialActive = mapping && videoActive && _haveSpatial;
+  _status.linkLatencyMs = _linkLatencyMs;
+  _status.jitterMs = _jitterMs;
   return _status;
 }
 
 inline void CinematicEngine::buildLook(const AudioFeatures& audio,
                                        bool videoActive, EngineSource src,
                                        sceneframe::SceneKind sceneKind,
-                                       uint8_t conf, uint32_t dt) {
-  (void)dt;
+                                       uint8_t conf, uint32_t nowMs) {
   Look lk;
   lk.source = src;
   lk.scene = sceneKind;
   lk.event = _status.event;
   lk.confidence = conf;
 
-  float brightness = _cfg.maxBrightness;
+  // comfort tier caps the brightness ceiling on top of the reaction presets
+  const float maxB = _cfg.maxBrightness * cine::comfortBrightnessScale(_cfg.comfort);
+  const float cFlash = cine::comfortFlashScale(_cfg.comfort);
+  // an envelope is only visible once its scheduled start (nowMs + syncOffsetMs)
+  // passes; a future start parks the transient at zero until the AV beat lands.
+  const bool flashOn =
+      _flash > 0.01f && (int32_t)(nowMs - _flashStartMs) >= 0;
+  const bool boomOn =
+      _boom > 0.01f && (int32_t)(nowMs - _boomStartMs) >= 0;
+  float brightness = maxB;
   float saturation = 1.0f;
   float hueShift = 0.0f;
   float movement = _cfg.speed * (0.35f + 0.65f * (videoActive ? _vMotion : 0.0f));
@@ -448,15 +505,15 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
   }
 
   // flash: brightness rides to the ceiling, then the envelope decays.
-  // The Director's flashScale suppresses it in calm/suspense moods; it never
-  // exceeds 1.0 so the ceiling bound is preserved.
-  if (_flash > 0.01f) {
-    const float fs = _flash * _intent.flashScale;
-    brightness = brightness + (_cfg.maxBrightness - brightness) * cl01(fs * 0.9f);
+  // The Director's flashScale suppresses it in calm/suspense moods; the comfort
+  // tier caps the ceiling so Film calm never strobes; it never exceeds 1.0.
+  if (flashOn) {
+    const float fs = cl01(_flash * cFlash) * _intent.flashScale;
+    brightness = brightness + (maxB - brightness) * cl01(fs * 0.9f);
     saturation *= (1.0f - fs * 0.15f);
   }
   // boom: split-second dip before the flash for contrast
-  if (_boom > 0.01f) brightness *= (1.0f - _boom * 0.12f);
+  if (boomOn) brightness *= (1.0f - _boom * 0.12f);
 
   // ambient floor: near-black scenes stay subtly lit; video luminance informs it
   float floor = _cfg.ambientFloor;
@@ -466,7 +523,7 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
                 : _vLum * _cfg.visualInfluence * 0.28f;
   }
   if (brightness < floor) brightness = floor;
-  if (brightness > _cfg.maxBrightness) brightness = _cfg.maxBrightness;
+  if (brightness > maxB) brightness = maxB;
 
   // genre overlays (spec §21)
   switch (_cfg.genre) {
@@ -490,8 +547,8 @@ inline void CinematicEngine::buildLook(const AudioFeatures& audio,
   lk.hueShift = cl01(hueShift);
   lk.movement = cl01(movement);
   lk.pulse = cl01(pulse);
-  lk.flash = cl01(_flash * _intent.flashScale);
-  lk.impact = cl01(_boom);
+  lk.flash = flashOn ? cl01(_flash * cFlash * _intent.flashScale) : 0.0f;
+  lk.impact = boomOn ? cl01(_boom) : 0.0f;
   lk.calm = cl01(calm);
   lk.tintMix = cl01(tintMix);
   lk.tint = tint;

@@ -1173,6 +1173,148 @@ void test_picker_switch_back_recovery() {
   TEST_ASSERT_EQUAL_INT32(3, (int32_t)p.info(p.indexOf(a))->validCount);
 }
 
+// ---------------------------------------------------------------------
+// Engine: sync offset, comfort tier, link latency (spec #5)
+
+void test_sync_offset_delays_flash_envelope() {
+  Config c;
+  defaultConfig(c);
+  c.syncOffsetMs = 300;
+  CinematicEngine eng;
+  eng.configure(c);
+
+  uint32_t now = 0;
+  Frame none = videoFrame(1u, now, SCENE_ACTION, SEVENT_NONE, 100, 128, 40,
+                          160, 160, 128);
+  Frame flash = videoFrame(2u, now, SCENE_ACTION, SEVENT_FLASH, 100, 255, 40,
+                           160, 160, 200);
+
+  eng.update(quietAudio(), &none, now);
+  now += 16;
+  eng.update(quietAudio(), &flash, now);  // triggers, but schedules +300 ms
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, eng.look().flash);
+
+  // while the envelope is parked the transient stays invisible
+  now = 300;
+  eng.update(quietAudio(), &none, now);
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, eng.look().flash);
+
+  // once the scheduled start passes the flash lands on the AV beat
+  now = 316;
+  eng.update(quietAudio(), &none, now);
+  TEST_ASSERT(eng.look().flash > 0.0f);
+}
+
+void test_sync_offset_negative_leads_envelope() {
+  Config c;
+  defaultConfig(c);
+  c.syncOffsetMs = -200;  // envelope began 200 ms ago => past its 180 ms hold
+  CinematicEngine eng;
+  eng.configure(c);
+
+  uint32_t now = 0;
+  Frame none = videoFrame(1u, now, SCENE_ACTION, SEVENT_NONE, 100, 128, 40,
+                          160, 160, 128);
+  Frame flash = videoFrame(2u, now, SCENE_ACTION, SEVENT_FLASH, 100, 255, 40,
+                           160, 160, 200);
+  eng.update(quietAudio(), &none, now);
+  eng.update(quietAudio(), &flash, now);  // start = now - 200
+  const float led = eng.look().flash;
+  TEST_ASSERT(led > 0.0f);
+
+  Config c0;
+  defaultConfig(c0);
+  CinematicEngine eng0;
+  eng0.configure(c0);
+  eng0.update(quietAudio(), &none, 0);
+  eng0.update(quietAudio(), &flash, 0);
+  const float normal = eng0.look().flash;
+  TEST_ASSERT(led < normal);  // the envelope has already consumed 200 ms
+}
+
+void test_comfort_film_dims_flash_and_brightness() {
+  auto run = [](int comfort) {
+    Config c;
+    defaultConfig(c);
+    c.comfort = comfort;
+    c.maxBrightness = 0.5f;
+    c.flashIntensity = 1.0f;
+    c.reaction = 1.0f;
+    c.sensitivity = 0.6f;
+    c.visualInfluence = 0.7f;
+    CinematicEngine eng;
+    eng.configure(c);
+    uint32_t now = 0;
+    Frame none = videoFrame(1u, now, SCENE_ACTION, SEVENT_NONE, 100, 128, 40,
+                            160, 160, 128);
+    Frame flash = videoFrame(2u, now, SCENE_ACTION, SEVENT_FLASH, 100, 255, 40,
+                             160, 160, 200);
+    eng.update(quietAudio(), &none, now);
+    now += 16;
+    eng.update(quietAudio(), &flash, now);
+    return eng.look();
+  };
+
+  const Look lf = run(cine::COMFORT_FILM);
+  const Look ls = run(cine::COMFORT_STANDARD);
+  const Look le = run(cine::COMFORT_EXTREME);
+  TEST_ASSERT(ls.flash > 0.0f);
+  TEST_ASSERT(lf.flash < ls.flash);
+  TEST_ASSERT(le.flash >= ls.flash);
+  // brightness ceiling is capped by the comfort tier too (Film calm dims)
+  TEST_ASSERT(lf.brightness <= ls.brightness);
+}
+
+void test_comfort_film_extends_flash_interval() {
+  auto sustained = [](int comfort, float flashIntensity) {
+    Config c;
+    defaultConfig(c);
+    c.comfort = comfort;
+    c.flashMinGapMs = 90;
+    c.flashIntensity = flashIntensity;
+    c.flashDurationMs = 180;
+    CinematicEngine eng;
+    eng.configure(c);
+    uint32_t now = 0;
+    Frame none = videoFrame(1u, now, SCENE_ACTION, SEVENT_NONE, 100, 128, 40,
+                            160, 160, 128);
+    Frame flash = videoFrame(2u, now, SCENE_ACTION, SEVENT_FLASH, 100, 255, 40,
+                             160, 160, 200);
+    eng.update(quietAudio(), &none, now);
+    for (int i = 0; i < 25; ++i) {  // ~400 ms of continuous flashing
+      now += 16;
+      eng.update(quietAudio(), &flash, now);
+    }
+    return eng.look().flash;
+  };
+  // standard re-triggers every ~90 ms so the envelope stays pinned at peak;
+  // film's 2.2x gap (198 ms) lets it decay between flashes => lower impulse
+  const float fs = sustained(cine::COMFORT_STANDARD, 1.0f);
+  const float ff = sustained(cine::COMFORT_FILM, 1.0f);
+  TEST_ASSERT(ff < fs);
+}
+
+void test_link_latency_and_jitter_estimated() {
+  Config c;
+  defaultConfig(c);
+  CinematicEngine eng;
+  eng.configure(c);
+
+  // companion host clock advances +33 ms per +50 ms local arrival => the one
+  // -way link latency is (50-33)/2 = 8 ms, repeated eight times.
+  uint32_t now = 1000;
+  uint32_t host = 1000;
+  for (int i = 0; i < 8; ++i) {
+    Frame f = videoFrame((uint32_t)(i + 1), host, SCENE_ACTION, SEVENT_NONE,
+                         100, 128, 40, 160, 160, 128);
+    eng.update(quietAudio(), &f, now);
+    now += 50;
+    host += 33;
+  }
+  TEST_ASSERT_INT_WITHIN(2, 5, eng.status().linkLatencyMs);
+  TEST_ASSERT_INT_WITHIN(3, 0, eng.status().jitterMs);
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------- main
@@ -1232,5 +1374,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_picker_table_full_eviction);
   RUN_TEST(test_picker_skew_estimate);
   RUN_TEST(test_picker_switch_back_recovery);
+  RUN_TEST(test_sync_offset_delays_flash_envelope);
+  RUN_TEST(test_sync_offset_negative_leads_envelope);
+  RUN_TEST(test_comfort_film_dims_flash_and_brightness);
+  RUN_TEST(test_comfort_film_extends_flash_interval);
+  RUN_TEST(test_link_latency_and_jitter_estimated);
   return UNITY_END();
 }

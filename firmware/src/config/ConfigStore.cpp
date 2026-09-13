@@ -192,6 +192,8 @@ void serializeCinematic(JsonObject s, const cine::Config& c) {
   s["enabled"] = c.enabled;
   s["mode"] = c.mode;
   s["genre"] = c.genre;
+  s["comfort"] = c.comfort;
+  s["syncOffsetMs"] = c.syncOffsetMs;
   s["sensitivity"] = c.sensitivity;
   s["reaction"] = c.reaction;
   s["visualInfluence"] = c.visualInfluence;
@@ -221,6 +223,8 @@ void deserializeCinematic(JsonObject s, cine::Config& c) {
   c.enabled = s["enabled"] | c.enabled;
   c.mode = clampInt(s["mode"] | c.mode, 0, cine::MODE_COUNT - 1);
   c.genre = clampInt(s["genre"] | c.genre, 0, cine::GENRE_COUNT - 1);
+  c.comfort = clampInt(s["comfort"] | c.comfort, 0, cine::COMFORT_COUNT - 1);
+  c.syncOffsetMs = clampInt(s["syncOffsetMs"] | c.syncOffsetMs, -2000, 2000);
   c.sensitivity = validFloat(s["sensitivity"])
                       ? clampFloat(s["sensitivity"].as<float>(), 0.25f, 3.0f)
                       : c.sensitivity;
