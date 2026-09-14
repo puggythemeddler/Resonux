@@ -8,6 +8,8 @@ import { MockController } from "../sim/mock";
 import fs from "node:fs";
 import path from "node:path";
 import { SettingsStore } from "./settings";
+import { LogStore, type LogLevel } from "../log/log";
+import { buildReport, suggestedReportName } from "./report";
 import type {
   AppInfo,
   AppSettings,
@@ -20,6 +22,7 @@ import type {
   ThemeMode,
   ConfigCommandResult,
   HardwareCheckReport,
+  SystemCommandResult,
 } from "../domain/bridge";
 import type { ConfigPayload, FrameSample, StatePayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
@@ -37,6 +40,7 @@ export class AppCore {
   private readonly registry: ControllerRegistry;
   private readonly settings: SettingsStore;
   private readonly listeners = new Set<Listener>();
+  private readonly events = new LogStore();
   private simulator: MockController | null = null;
   private simulatorRunning = true;
   private readonly appInfo: AppInfo;
@@ -87,6 +91,29 @@ export class AppCore {
     }
   }
 
+  // Session log: significant, secret-free events only. Emitting here means the
+  // renderer sees the new event on the next snapshot push.
+  private log(
+    level: LogLevel,
+    kind: string,
+    message: string,
+    controller?: { id: string; name?: string }
+  ): void {
+    this.events.add({
+      level,
+      kind,
+      message,
+      controllerId: controller?.id,
+      controllerName: controller?.name,
+    });
+    this.emit();
+  }
+
+  private controllerLabel(id: string): { id: string; name?: string } | undefined {
+    const c = this.registry.list().find((x) => x.id === id);
+    return c ? { id, name: c.name } : { id };
+  }
+
   // ---------------------------------------------------------- queries
 
   info(): AppInfo {
@@ -98,6 +125,7 @@ export class AppCore {
     return {
       ...this.registry.snapshot(settings.selectedControllerId, settings, this.simulatorRunning),
       wizardNeeded: !settings.wizardCompleted && settings.selectedControllerId === null,
+      log: this.events.entries(),
     };
   }
 
@@ -113,11 +141,14 @@ export class AppCore {
   selectController(id: string | null): void {
     if (id === null) {
       this.settings.patch({ selectedControllerId: null });
+      this.log("info", "app", "No controller selected");
       this.emit();
       return;
     }
     if (!this.registry.has(id)) return;
     this.settings.patch({ selectedControllerId: id });
+    const label = this.controllerLabel(id);
+    this.log("info", "app", "Controller selected", label);
     this.emit();
   }
 
@@ -131,6 +162,7 @@ export class AppCore {
     this.settings.patch({ simulatorRunning: enabled });
     if (enabled) void this.startSimulatorInternal();
     else void this.shutdownSimulator();
+    this.log("info", "simulator", enabled ? "Simulator started" : "Simulator turned off");
     this.emit();
   }
 
@@ -141,8 +173,10 @@ export class AppCore {
       const port = await sim.listen();
       this.simulator = sim;
       this.registry.registerSimulator("sim-demo", sim.name, port);
+      this.log("info", "simulator", "Simulator listening");
     } catch {
       // If the loopback server can't bind, run without a simulator.
+      this.log("warn", "simulator", "Simulator could not start");
     }
   }
 
@@ -237,6 +271,7 @@ export class AppCore {
       const cfg = await get<ConfigPayload>(ep, "/api/config");
       const merged = { ...cfg, deviceName: trimmed };
       await put(ep, "/api/config", merged);
+      this.log("info", "config", `Controller renamed to "${trimmed}"`, this.controllerLabel(id));
       return { ok: true, rebootApplied: true, backupPath };
     } catch (err) {
       return { ok: false, rebootApplied: false, backupPath: null, detail: describeError(err) };
@@ -255,6 +290,8 @@ export class AppCore {
       const net = cfg.net ?? { enabled: true, mode: 0, apSsid: "Resonux", apPassword: "", staSsid: "", staPassword: "" };
       const merged: ConfigPayload = { ...cfg, net: { ...net, staSsid: trimmedSsid, staPassword: password } };
       await put(ep, "/api/config", merged);
+      // The password itself is never logged or persisted.
+      this.log("info", "config", `Wi-Fi network set to "${trimmedSsid}"`, this.controllerLabel(id));
       return { ok: true, rebootApplied: true, wifiApplied: true, backupPath };
     } catch (err) {
       return { ok: false, rebootApplied: false, backupPath: null, detail: describeError(err) };
@@ -347,7 +384,7 @@ export class AppCore {
       fetchState: () => get<StatePayload>(ep, "/api/state"),
       setBrightness: (value) => this.okCommand(ep, "/api/state/brightness", { value }),
     };
-    return runHardwareCheck(
+    const report = await runHardwareCheck(
       {
         id,
         name: info?.name ?? id,
@@ -355,5 +392,74 @@ export class AppCore {
       },
       calls
     );
+    const { fail, warn } = report.summary;
+    this.log(
+      fail > 0 ? "error" : warn > 0 ? "warn" : "info",
+      "check",
+      `Hardware check finished: ${report.summary.pass} passed, ${warn} need attention, ${fail} failed`,
+      this.controllerLabel(id)
+    );
+    return report;
+  }
+
+  // --------------------------------------------------- system commands
+
+  async requestRestart(id: string): Promise<SystemCommandResult> {
+    const ep = this.endpointFor(id);
+    const label = this.controllerLabel(id);
+    if (!ep) {
+      this.log("error", "system", "Restart was not sent: unknown controller", label);
+      return { ok: false, action: "restart", detail: `Unknown controller: ${id}` };
+    }
+    try {
+      const res = await post<{ ok?: boolean; action?: string }>(ep, "/api/system/restart", {});
+      const ok = res?.ok === true;
+      this.log(ok ? "info" : "warn", "system", ok ? "Restart requested" : "Controller declined the restart", label);
+      return {
+        ok,
+        action: "restart",
+        detail: ok ? undefined : "The controller did not confirm the restart.",
+      };
+    } catch (err) {
+      this.log("warn", "system", "Restart request failed", label);
+      return { ok: false, action: "restart", detail: describeError(err) };
+    }
+  }
+
+  async requestPowerOff(id: string): Promise<SystemCommandResult> {
+    const ep = this.endpointFor(id);
+    const label = this.controllerLabel(id);
+    if (!ep) {
+      this.log("error", "system", "Power-off was not sent: unknown controller", label);
+      return { ok: false, action: "power_off", detail: `Unknown controller: ${id}` };
+    }
+    try {
+      const res = await post<{ ok?: boolean; action?: string }>(ep, "/api/system/power-off", {});
+      const ok = res?.ok === true;
+      this.log(ok ? "info" : "warn", "system", ok ? "Power-off requested" : "Controller declined power-off", label);
+      return {
+        ok,
+        action: "power_off",
+        detail: ok ? undefined : "The controller did not confirm power-off.",
+      };
+    } catch (err) {
+      this.log("warn", "system", "Power-off request failed", label);
+      return { ok: false, action: "power_off", detail: describeError(err) };
+    }
+  }
+
+  async exportReport(id: string, check: HardwareCheckReport | null): Promise<string> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    const controller = this.registry.list().find((c) => c.id === id);
+    if (!controller) throw new HttpError(404, "unknown controller", id);
+    const status = await get<StatusSnapshot>(ep, "/api/status");
+    return buildReport({
+      app: this.appInfo,
+      controller,
+      status,
+      check,
+      log: this.events.entries(),
+    });
   }
 }

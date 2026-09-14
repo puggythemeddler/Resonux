@@ -159,6 +159,10 @@ export class MockController {
       this.server.on("error", reject);
       this.server.listen(this.port, "127.0.0.1", () => {
         this.ticks = 0;
+        // A real reboot boots back into the running state — a sleeping unit
+        // that restarts does the same, so mirror it here.
+        this.status.system = { state: "reactive", action: "idle" };
+        this.status.display = { ...this.status.display, awake: true };
         resolve();
       });
     });
@@ -328,6 +332,20 @@ export class MockController {
       }
       case "GET /api/system/status": {
         json(200, { ok: true, state: this.status.system.state, action: this.status.system.action });
+        return;
+      }
+      case "POST /api/system/restart": {
+        // Mirrors the firmware: reply first, then gracefully restart (which
+        // drops this same loopback port for a real, observable gap).
+        json(200, { ok: true, action: "restart" });
+        void this.restart(350);
+        return;
+      }
+      case "POST /api/system/power-off": {
+        // Mirrors the firmware's deep sleep: the unit stops reacting. The mock
+        // stays up but honestly reports the sleeping state.
+        this.status.system = { state: "sleeping", action: "power_off" };
+        json(200, { ok: true, action: "power_off" });
         return;
       }
 

@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 40 tests across 5 suites (no hardware, no
+`cd desktop && npm test` runs 53 tests across 7 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -59,9 +59,11 @@ network peers):
   0–255 validation, honours the cinematic toggle, 404s on unknown routes;
   plus **config writes**: `PUT /api/config` renames the device, the AP-mode
   variant performs the Wi-Fi hand-off (ap → sta, honest `rebooting:false`),
-  and a keep-port `restart()` preserves address + state; plus **the D3
-  surface**: themes list/global + per-strip select/PUT + DELETE/reset, a
-  per-strip effect endpoint with validation, audio source pick + auto-select
+  and a keep-port `restart()` preserves address + state; **system commands**:
+  `POST /api/system/restart` replies, drops the port, and comes back with
+  reset state; `POST /api/system/power-off` honestly reports `sleeping`; plus
+  **the D3 surface**: themes list/global + per-strip select/PUT + DELETE/reset,
+  a per-strip effect endpoint with validation, audio source pick + auto-select
   (both reflected in `/api/audio/sources`), and the cinematic QA burst.
 - `registry.test` — a registered controller heals online and reports latency;
   a controller that stops answering goes offline and **loses its stale status
@@ -72,10 +74,22 @@ network peers):
   byte-exact backup left in `userData/backups`**; the first-run
   `wizardNeeded` lifecycle (pick a controller or finish the wizard);
   `waitOnline` answers for the running controller and times out honestly for
-  an unknown one; and the **D3 commands** round-trip into the running
+  an unknown one; the **D3 commands** round-trip into the running
   simulator: `getState`, `getThemes`, `selectTheme` (global + per-strip),
   `setStripEffect`, `selectAudioSource`, `setAutoSelect`, and
-  `triggerCinematicTest`.
+  `triggerCinematicTest`; **D4 system commands**: `requestRestart` (comes
+  back online) and `requestPowerOff` (honest sleeping state), plus
+  `exportReport` writes a secret-free JSON report with the session event log
+  (never includes addresses or passwords).
+- `log.test` — the **D4 session event log** (`LogStore`): entries are recorded
+  in order with increasing seq numbers and ISO timestamps; the buffer caps at
+  a configurable size and drops the oldest entries; returned entries are
+  defensive copies.
+- `report.test` — the **D4 report builder** (`buildReport`): serialises the
+  app version, controller facts, hardware check, and session log as JSON;
+  never includes network addresses, ports, Wi-Fi credentials, or passwords;
+  a null check serialises honestly; `suggestedReportName` sanitises the
+  controller name into a safe filename.
 - `check.test` — the **guided hardware check engine** (D4): `blipTarget` never
   picks 0 and never blasts full brightness; a healthy, live controller
   (varying amp) passes every step and restores brightness; an unanswerable

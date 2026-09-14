@@ -68,7 +68,7 @@ export function Button({
   disabled,
 }: {
   children: React.ReactNode;
-  variant?: "primary" | "ghost";
+  variant?: "primary" | "ghost" | "danger";
   icon?: IconName;
   size?: "small" | "medium";
   onClick?: () => void;
@@ -83,6 +83,50 @@ export function Button({
       {icon && <Icon name={icon} size={16} />}
       {children}
     </button>
+  );
+}
+
+// Destructive/serious actions never fire on a single click: each sits behind
+// an explicit confirm dialog (the "no silent destructive path" rule). Escaping
+// or clicking the backdrop cancels.
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  danger,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body?: React.ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <section
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2>{title}</h2>
+        {body && <div className="sub" style={{ marginTop: "var(--space-2)" }}>{body}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", marginTop: "var(--space-5)" }}>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
+            {confirmLabel ?? "Confirm"}
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 

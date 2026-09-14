@@ -57,7 +57,9 @@
   --warn: hsl(42 90% 58%);
   --warn-soft: hsl(42 40% 16%);
   --danger: hsl(360 68% 58%);
+  --danger-strong: hsl(360 70% 64%);
   --danger-soft: hsl(360 38% 18%);
+  --danger-ink: #ffffff;
   --info: hsl(210 80% 60%);
   --info-soft: hsl(210 45% 16%);
 
@@ -89,7 +91,9 @@
   --warn: hsl(40 88% 42%);
   --warn-soft: hsl(40 90% 92%);
   --danger: hsl(360 65% 50%);
+  --danger-strong: hsl(360 70% 42%);
   --danger-soft: hsl(360 70% 94%);
+  --danger-ink: #ffffff;
   --info: hsl(210 85% 46%);
   --info-soft: hsl(210 70% 93%);
 
@@ -442,6 +446,17 @@ button {
 
 .btn.ghost {
   background: transparent;
+}
+
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+
+.btn.danger:hover {
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
 }
 
 .btn svg {
@@ -809,6 +824,86 @@ ul.plain {
   color: var(--text-dim);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------- dialog */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  width: min(460px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  padding: var(--space-5);
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+/* ------------------------------------------------------------ log list */
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.log-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+}
+
+.log-when {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  flex: 0 0 auto;
+}
+
+.log-chip {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  color: var(--text-dim);
+  background: var(--surface-3);
+}
+
+.log-chip.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.log-chip.error {
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 /* ----------------------------------------------------------- busy chip */

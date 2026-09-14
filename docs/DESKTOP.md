@@ -244,9 +244,19 @@ in the report, never presented as real hardware. Details and thresholds live
 in `src/diagnostics/check.ts`; the busiest real pacing is brief (sub-second
 audio spacing with a ~0.9 s blip).
 
-Still planned under this phase: log views, structured report export (no
-secrets), and restart/power-off behind confirms (`POST /api/system/restart`,
-`/power-off`).
+The session event log (in-memory, capped, secret-free by design — see
+`src/log/log.ts`) records every significant action (controller discovery,
+selection, simulator start/stop, config writes, hardware check outcomes) with
+timestamps, seq numbers, and level badges. The structured report export
+(`AppCore.exportReport()`) writes the selected controller's hardware check
+facts plus the session history to a dated JSON file that never contains network
+addresses, Wi-Fi passwords, or credentials — the save dialog lets the user
+pick where to store it.
+
+Restart (`POST /api/system/restart`) and power-off (`/power-off`) live behind
+a confirmation dialog; restart replies, then the hardware resets, and the app
+waits for it to come back on the same port; power-off reports a sleeping
+state. Both actions are logged to the session event stream.
 
 ## Config writes & first-run (Phase 2)
 
@@ -288,12 +298,14 @@ by default.
 | Suite | Covers |
 |---|---|
 | `src/domain/discovery.test.ts` (5) | codec round-trip, lenient unknown-key parse, non-responder rejection — keeps the TS port byte-compatible with the C++ codec |
-| `src/sim/mock.test.ts` (14) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; restart on the same port keeping state; **D3**: themes payload/select-global+per-strip/PUT+DELETE/reset, per-strip effect with validation, audio source + auto-select, cinematic test burst |
+| `src/sim/mock.test.ts` (16) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; restart on the same port keeping state; system commands: restart drops the port then comes back with the same port + reset state, power-off honestly reports sleeping; **D3**: themes payload/select-global+per-strip/PUT+DELETE/reset, per-strip effect with validation, audio source + auto-select, cinematic test burst |
 | `src/client/registry.test.ts` (4) | simulator health → online; going offline clears stale status (identity survives); offline→heal after a restart; removal |
-| `src/core/app.test.ts` (11) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline`; **D3**: getState/getThemes/selectTheme (global + per-strip)/setStripEffect/selectAudioSource/setAutoSelect/triggerCinematicTest |
+| `src/core/app.test.ts` (15) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline`; **D3**: getState/getThemes/selectTheme (global + per-strip)/setStripEffect/selectAudioSource/setAutoSelect/triggerCinematicTest; **D4**: requestRestart/requestPowerOff (with system state change); exportReport (secret-free JSON, session log); session log populated in snapshot |
+| `src/log/log.test.ts` (3) | **D4**: ordering/seq + ISO timestamps; cap at configured size (drops oldest); returned entries are copies (no internal mutation) |
+| `src/core/report.test.ts` (4) | **D4**: serialises app/controller/check/log into JSON; excludes addresses, ports, Wi-Fi credentials, and passwords; null check serialises honestly; `suggestedReportName` sanitises the controller name |
 | `src/diagnostics/check.test.ts` (6) | **D4**: `blipTarget` bounds; healthy live controller passes every step + restores brightness; unanswerable controller fails fast; flat audio and a write that won't restore are honest *warns*; full `runHardwareCheck` against the in-process simulator passes and labels itself *Simulator* |
 
-**40 host tests** across the five suites, plus the firmware gate
+**53 host tests** across the seven suites, plus the firmware gate
 (`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
@@ -350,7 +362,7 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
 | **1** | Architecture + client layer + discovery + simulator + app shell (Home/Setup) | **in repo, builds + 14 host tests green** |
 | **2** | First-run setup wizard: guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
 | **3** | Main Control Center: Lights (per strip, by name), Music (sources, plain language), Themes (swatches, global + per-strip), Cinematic basics (engine toggle + scene readout + QA test bursts) | **in repo, builds + 40 host tests green, smoke verified** |
-| **4** | Diagnostics: guided hardware check (live, honest step-by-step), health; logs, structured report export (no secrets), restart/power-off with confirms still planned | **guided hardware check in repo, builds + 40 host tests green; logs/export/restart/power-off pending** |
+| **4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step), health; session event log (in-memory, secret-free), structured report export (no secrets/addresses), restart/power-off behind confirms | **in repo, builds + 53 host tests green** |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
 | **6** | Firmware & recovery: OTA update, backup/restore, flash recovery via bundled esptool | planned |
 | **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | **installer in repo (NSIS, one-click, single-file exe); auto-update/tray/UX audit pending** |

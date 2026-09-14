@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import type { Snapshot, HardwareCheckReport, CheckStepResult } from "../../src/domain/bridge";
+import type { Snapshot, HardwareCheckReport, CheckStepResult, ExportReportResult } from "../../src/domain/bridge";
 import type { CheckVerdict } from "../../src/domain/types";
-import { Card, Button, HealthChip, KindChip, ErrorDetail } from "../components";
+import { Card, Button, HealthChip, KindChip, ErrorDetail, ConfirmDialog } from "../components";
 import { Icon } from "../icons";
 
 interface DiagnosticsProps {
@@ -9,6 +9,14 @@ interface DiagnosticsProps {
 }
 
 const STEP_ORDER: CheckStepResult["id"][] = ["reachability", "rail", "leds", "audio", "write"];
+
+type SystemAction = "restart" | "power_off";
+interface SystemOutcome {
+  kind: SystemAction;
+  ok: boolean;
+  cameBack?: boolean;
+  detail?: string;
+}
 
 function StepIcon({ verdict }: { verdict: CheckVerdict | "asked" }) {
   if (verdict === "pass") return <Icon name="check" size={16} className="check-icon pass" />;
@@ -23,6 +31,11 @@ export function Diagnostics({ snapshot }: DiagnosticsProps) {
   const [report, setReport] = useState<HardwareCheckReport | null>(null);
   const [error, setError] = useState<{ what: string; hint?: string; detail?: string } | null>(null);
   const [sawLights, setSawLights] = useState<boolean | null>(null);
+  const [confirm, setConfirm] = useState<SystemAction | null>(null);
+  const [systemBusy, setSystemBusy] = useState(false);
+  const [systemOutcome, setSystemOutcome] = useState<SystemOutcome | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<ExportReportResult | null>(null);
 
   // Follow the selected controller when it changes elsewhere (e.g. setup).
   useEffect(() => {
@@ -37,6 +50,7 @@ export function Diagnostics({ snapshot }: DiagnosticsProps) {
     setError(null);
     setReport(null);
     setSawLights(null);
+    setExportResult(null);
     try {
       const rep = await window.resonux.runHardwareCheck(targetId);
       setReport(rep);
@@ -48,6 +62,62 @@ export function Diagnostics({ snapshot }: DiagnosticsProps) {
       });
     } finally {
       setRunning(false);
+    }
+  };
+
+  const doRestart = async () => {
+    if (!targetId) return;
+    setConfirm(null);
+    setSystemBusy(true);
+    setSystemOutcome(null);
+    try {
+      const res = await window.resonux.restartController(targetId);
+      const cameBack = res.ok ? await window.resonux.waitOnline(targetId, 20000) : false;
+      setSystemOutcome({ kind: "restart", ok: res.ok, cameBack, detail: res.detail });
+    } catch (err) {
+      setSystemOutcome({
+        kind: "restart",
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
+
+  const doPowerOff = async () => {
+    if (!targetId) return;
+    setConfirm(null);
+    setSystemBusy(true);
+    setSystemOutcome(null);
+    try {
+      const res = await window.resonux.powerOff(targetId);
+      setSystemOutcome({ kind: "power_off", ok: res.ok, detail: res.detail });
+    } catch (err) {
+      setSystemOutcome({
+        kind: "power_off",
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
+
+  const doExport = async () => {
+    if (!targetId || !report) return;
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const res = await window.resonux.exportReport(targetId, report);
+      setExportResult(res);
+    } catch (err) {
+      setExportResult({
+        saved: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -200,8 +270,128 @@ export function Diagnostics({ snapshot }: DiagnosticsProps) {
           )}
 
           {report.note && <p className="hint">{report.note}</p>}
+
+          <div className="row" style={{ justifyContent: "flex-start", marginTop: "var(--space-4)" }}>
+            <Button variant="ghost" icon="save" onClick={() => void doExport()} disabled={exporting}>
+              {exporting ? "Exporting…" : "Export a report"}
+            </Button>
+            <span className="sub grow">
+              Facts only — no credentials, passwords, or network addresses.
+            </span>
+          </div>
+          {exportResult && !exportResult.saved && (
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <ErrorDetail
+                what="The report couldn't be saved."
+                hint="Choose a location that lets the app write, then try again."
+                detail={exportResult.detail}
+                onRetry={() => void doExport()}
+              />
+            </div>
+          )}
+          {exportResult?.saved && exportResult.filePath && (
+            <p className="hint" style={{ marginTop: "var(--space-3)" }}>
+              Saved to <code>{exportResult.filePath}</code>
+            </p>
+          )}
         </Card>
       )}
+
+      <Card
+        title="4 · System controls"
+        hint="Both commands ask the controller to shut down gracefully. Restart is safe anytime; power-off puts the unit to sleep until its wake pin or the reset button wakes it."
+      >
+        <div className="row">
+          <Button icon="power" onClick={() => setConfirm("restart")} disabled={!target || systemBusy}>
+            {systemOutcome?.kind === "restart" || systemBusy ? "Restarting…" : "Restart controller"}
+          </Button>
+          <Button
+            variant="danger"
+            icon="power"
+            onClick={() => setConfirm("power_off")}
+            disabled={!target || systemBusy}
+          >
+            Power off
+          </Button>
+          {systemBusy && (
+            <span className="sub grow">
+              Waiting for the controller to respond — this can take a moment.
+            </span>
+          )}
+        </div>
+
+        {systemOutcome && systemOutcome.kind === "restart" && (
+          <p className="hint" style={{ marginTop: "var(--space-3)" }}>
+            {!systemOutcome.ok
+              ? `The controller didn't confirm the restart.`
+              : systemOutcome.cameBack
+                ? "The controller restarted and is back online."
+                : "The restart was accepted, but the controller didn't come back within 20 seconds."}
+            {systemOutcome.detail && ` (${systemOutcome.detail})`}
+          </p>
+        )}
+        {systemOutcome && systemOutcome.kind === "power_off" && (
+          <p className="hint" style={{ marginTop: "var(--space-3)" }}>
+            {systemOutcome.ok
+              ? "The controller is powering off. Wake it with the reset button or its configured wake pin."
+              : `The controller didn't confirm power-off.${systemOutcome.detail ? ` (${systemOutcome.detail})` : ""}`}
+          </p>
+        )}
+
+        <ConfirmDialog
+          open={confirm === "restart"}
+          title="Restart this controller?"
+          body={
+            <>
+              <b>{target?.name}</b> will shut down and boot back up. Its lights
+              will go out for a moment, then return.
+            </>
+          }
+          confirmLabel="Restart"
+          onConfirm={() => void doRestart()}
+          onCancel={() => setConfirm(null)}
+        />
+        <ConfirmDialog
+          open={confirm === "power_off"}
+          title="Power this controller off?"
+          body={
+            <>
+              <b>{target?.name}</b> will shut down into deep sleep. Its lights
+              will stop until you wake it with the reset button or a configured
+              wake pin.
+            </>
+          }
+          confirmLabel="Power off"
+          danger
+          onConfirm={() => void doPowerOff()}
+          onCancel={() => setConfirm(null)}
+        />
+      </Card>
+
+      <Card
+        title="Session log"
+        hint="What the Control Center has done during this session. Kept in memory only — nothing here is a password, token, or network address."
+      >
+        {snapshot.log.length === 0 ? (
+          <p className="sub">Nothing logged yet this session.</p>
+        ) : (
+          <ul className="log-list">
+            {snapshot.log
+              .slice(-30)
+              .reverse()
+              .map((e) => (
+                <li key={e.seq} className={`log-item ${e.level}`}>
+                  <span className="log-when">{new Date(e.at).toLocaleTimeString([], { hour12: false })}</span>
+                  <span className={`log-chip ${e.level}`}>{e.level}</span>
+                  <span className="grow">
+                    {e.message}
+                    {e.controllerName && <span className="sub"> — {e.controllerName}</span>}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+      </Card>
     </>
   );
 }

@@ -262,3 +262,86 @@ describe("AppCore D3 control surface", () => {
     }
   });
 });
+
+describe("AppCore D4 system commands, log and export", () => {
+  it("restarts a controller and it comes back online", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d4-restart-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const res = await core.requestRestart(id);
+      expect(res.ok).toBe(true);
+      expect(res.action).toBe("restart");
+      expect(await core.waitOnline(id, 6000)).toBe(true);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("requestRestart on an unknown controller fails honestly", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d4-rbad-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      const res = await core.requestRestart("nope");
+      expect(res.ok).toBe(false);
+      expect(res.detail).toContain("Unknown controller");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("powers a controller off into the sleeping state", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d4-off-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const res = await core.requestPowerOff(id);
+      expect(res.ok).toBe(true);
+      expect((await core.getStatus(id)).system.state).toBe("sleeping");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("records secret-free session events and exports a structured report", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d4-export-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      await core.renameController(id, "Studio");
+      // The registry picks the new name up from the next health poll.
+      await waitFor(() => {
+        const c = core.snapshot().controllers.find((x) => x.id === id);
+        return c?.name === "Studio";
+      });
+      const report = await core.exportReport(id, null);
+
+      const doc = JSON.parse(report) as {
+        app: { version: string };
+        controller: { name: string };
+        sessionLog: { message: string }[];
+      };
+      expect(doc.app.version).toBe("0.0.0-test");
+      expect(doc.controller.name).toBe("Studio");
+      expect(doc.sessionLog.some((e) => e.message.includes("renamed"))).toBe(true);
+
+      // The snapshot carries the same recent events to the renderer.
+      const snap = core.snapshot();
+      expect(snap.log.length).toBeGreaterThan(0);
+      // And the report never leaks the loopback address.
+      expect(report).not.toContain("127.0.0.1");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

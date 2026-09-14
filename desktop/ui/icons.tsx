@@ -16,7 +16,9 @@ export type IconName =
   | "search"
   | "wifi"
   | "alert"
-  | "check";
+  | "check"
+  | "power"
+  | "save";
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   home: (
@@ -120,6 +122,18 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="8.4" />
       <path d="m8.4 12.4 2.4 2.4 4.8-5" />
+    </>
+  ),
+  power: (
+    <>
+      <path d="M12 3v9" />
+      <path d="M6.2 7a8.5 8.5 0 1 0 11.6 0" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M4 4h12l4 4v12H4Z" />
+      <path d="M8 4v6h8V4M8 20v-6h8v6" />
     </>
   ),
 };

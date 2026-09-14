@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ResonuxApi, Snapshot, ThemeMode } from "../src/domain/bridge";
+import type { ResonuxApi, Snapshot, ThemeMode, HardwareCheckReport } from "../src/domain/bridge";
 
 const api: ResonuxApi = {
   getInfo: () => ipcRenderer.invoke("app:info"),
@@ -29,6 +29,10 @@ const api: ResonuxApi = {
   setAutoSelect: (id: string, autoSelect: boolean) => ipcRenderer.invoke("device:setAutoSelect", id, autoSelect),
   triggerCinematicTest: (id: string) => ipcRenderer.invoke("device:triggerCinematicTest", id),
   runHardwareCheck: (id: string) => ipcRenderer.invoke("device:runHardwareCheck", id),
+  restartController: (id: string) => ipcRenderer.invoke("device:restartController", id),
+  powerOff: (id: string) => ipcRenderer.invoke("device:powerOff", id),
+  exportReport: (id: string, check: HardwareCheckReport | null) =>
+    ipcRenderer.invoke("device:exportReport", id, check),
   onChanged: (cb: (snapshot: Snapshot) => void) => {
     const listener = (_event: unknown, snapshot: Snapshot) => cb(snapshot);
     ipcRenderer.on("app:changed", listener);

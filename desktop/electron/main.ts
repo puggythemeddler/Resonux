@@ -1,6 +1,9 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 import { AppCore } from "../src/core/app";
+import { suggestedReportName } from "../src/core/report";
+import type { HardwareCheckReport } from "../src/domain/bridge";
 
 let core: AppCore | null = null;
 let win: BrowserWindow | null = null;
@@ -96,6 +99,29 @@ function registerIpc(): void {
   );
   ipcMain.handle("device:triggerCinematicTest", (_e, id: string) => core?.triggerCinematicTest(id));
   ipcMain.handle("device:runHardwareCheck", (_e, id: string) => core?.runHardwareCheck(id));
+  ipcMain.handle("device:restartController", (_e, id: string) => core?.requestRestart(id));
+  ipcMain.handle("device:powerOff", (_e, id: string) => core?.requestPowerOff(id));
+  ipcMain.handle("device:exportReport", async (event, id: string, check: HardwareCheckReport | null) => {
+    try {
+      const text = await core?.exportReport(id, check);
+      if (!text) return { saved: false, detail: "Control Center is not running." };
+      const controller = core?.snapshot().controllers.find((c) => c.id === id);
+      const options = {
+        title: "Export diagnostic report",
+        defaultPath: suggestedReportName(controller?.name ?? "controller"),
+        filters: [{ name: "JSON report", extensions: ["json"] }],
+      };
+      const res =
+        win && !win.isDestroyed()
+          ? await dialog.showSaveDialog(win, options)
+          : await dialog.showSaveDialog(options);
+      if (res.canceled || !res.filePath) return { saved: false };
+      fs.writeFileSync(res.filePath, text, "utf8");
+      return { saved: true, filePath: res.filePath };
+    } catch (err) {
+      return { saved: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 app.whenReady().then(() => {

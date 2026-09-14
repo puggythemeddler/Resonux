@@ -66,6 +66,60 @@ describe("MockController REST surface", () => {
   });
 });
 
+describe("MockController system commands", () => {
+  it("accepts a restart, drops the port, and comes back on the SAME port", async () => {
+    const m = new MockController({ id: "sim-rs" });
+    try {
+      const port = await m.listen();
+      const res = await fetch(`http://127.0.0.1:${port}/api/system/restart`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, action: "restart" });
+
+      // The simulated reboot gap is real: watchers observe the outage, then the
+      // same loopback port answers again with normal system state.
+      const deadline = Date.now() + 4000;
+      let back = false;
+      while (Date.now() < deadline) {
+        try {
+          const status = (await (await fetch(`http://127.0.0.1:${port}/api/status`)).json()) as StatusSnapshot;
+          back = status.system.state === "reactive";
+          if (back) break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      expect(back).toBe(true);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("power-off replies ok and honestly reports the sleeping state", async () => {
+    const m = new MockController({ id: "sim-po" });
+    try {
+      const port = await m.listen();
+      const res = await fetch(`http://127.0.0.1:${port}/api/system/power-off`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, action: "power_off" });
+
+      const status = (await (await fetch(`http://127.0.0.1:${port}/api/status`)).json()) as StatusSnapshot;
+      expect(status.system.state).toBe("sleeping");
+      expect(status.system.action).toBe("power_off");
+    } finally {
+      await m.close();
+    }
+  });
+});
+
 describe("MockController config writes", () => {
   it("renames the device through PUT /api/config", async () => {
     const m = new MockController({ id: "sim-cfg" });
