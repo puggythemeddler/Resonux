@@ -190,7 +190,7 @@ every screen is demonstrable without hardware. See `docs/DESKTOP.md`.
 cd desktop
 npm install
 npm run typecheck               # tsc (main + renderer)
-npm test                        # vitest — 21 host tests, no hardware
+npm test                        # vitest — 34 host tests, no hardware
 npm run build                   # tsc main + vite renderer
 npm start                       # build + launch the Control Center
 ```
@@ -200,6 +200,12 @@ On first run the app auto-starts its bundled simulator (clearly labelled
 **first-run setup guide** walks you through finding your controller, verifying
 it, renaming it and handing it your Wi-Fi — with a byte-exact config backup
 before any change and honest, plain-language errors throughout.
+
+The main **Control Center** surface covers the everyday controls without
+jargon: **Lights** (master brightness + per-strip theme/effect, picked by
+name), **Music** (what the controller listens to, plus auto-select), **Themes**
+(swatch-first browsing, *Use everywhere* or per strip) and **Cinematic**
+(engine toggle, live scene readout, and a safe QA test burst).
 
 First run creates **AP-mode** defaults (`Resonux` hotspot, no password). Join
 it from a phone/PC and browse to `http://192.168.4.1/` for the dashboard, or
@@ -309,9 +315,10 @@ bass/mid/treble, beat, free heap).
 - `cd web && npm run dev` — dashboard **simulator** (mock `/api` endpoints,
   no hardware required).
 - `cd desktop && npm test` — **Control Center host tests** (RESO_DISCOVER
-  codec, simulator REST parity + config writes/AP hand-off, registry
-  health/offline/heal rules, AppCore boot → simulator → live commands + first-run
-  wizard lifecycle — 21 tests).
+  codec, simulator REST parity + config writes/AP hand-off + themes/effect/
+  audio/cinematic-test surface, registry health/offline/heal rules, AppCore
+  boot → simulator → live commands + first-run wizard lifecycle + D3 control
+  surface — 34 tests).
 - `python tools/companion/resonux_companion.py --once --sim` — send simulated
   SceneFrames over the LAN with zero third-party dependencies
   (`docs/CINEMATIC.md`).

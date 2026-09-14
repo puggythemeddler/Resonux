@@ -80,6 +80,21 @@ function registerIpc(): void {
     core?.waitOnline(id, timeoutMs)
   );
   ipcMain.handle("settings:finishWizard", () => core?.finishWizard());
+  ipcMain.handle("device:getThemes", (_e, id: string) => core?.getThemes(id));
+  ipcMain.handle("device:getState", (_e, id: string) => core?.getState(id));
+  ipcMain.handle("device:selectTheme", (_e, id: string, themeId: string, strip?: number) =>
+    core?.selectTheme(id, themeId, strip)
+  );
+  ipcMain.handle("device:setStripEffect", (_e, id: string, strip: number, effectId: number) =>
+    core?.setStripEffect(id, strip, effectId)
+  );
+  ipcMain.handle("device:selectAudioSource", (_e, id: string, source: number) =>
+    core?.selectAudioSource(id, source)
+  );
+  ipcMain.handle("device:setAutoSelect", (_e, id: string, autoSelect: boolean) =>
+    core?.setAutoSelect(id, Boolean(autoSelect))
+  );
+  ipcMain.handle("device:triggerCinematicTest", (_e, id: string) => core?.triggerCinematicTest(id));
 }
 
 app.whenReady().then(() => {

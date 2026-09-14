@@ -4,7 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { AppCore } from "./app";
 import { get } from "../client/http";
-import type { ConfigPayload } from "../domain/types";
+import type { ConfigPayload, ThemesPayload, StatePayload, AudioSourcesPayload } from "../domain/types";
 
 async function waitFor(fn: () => boolean, timeoutMs = 5000, stepMs = 30): Promise<void> {
   const start = Date.now();
@@ -150,6 +150,112 @@ describe("AppCore", () => {
       const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
       expect(await core.waitOnline(id, 3000)).toBe(true);
       expect(await core.waitOnline("nope", 200)).toBe(false);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AppCore D3 control surface", () => {
+  it("getState returns theme/effect/brightness payload", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-state-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+      const st = await core.getState(id);
+      expect(st.stripCount).toBeGreaterThanOrEqual(1);
+      expect(typeof st.brightness).toBe("number");
+      expect(Array.isArray(st.effect)).toBe(true);
+      expect(Array.isArray(st.theme.strips)).toBe(true);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("selectTheme changes the global and per-strip themes", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-thsel-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      expect(await core.selectTheme(id, "ocean")).toBe(true);
+      const th1 = await core.getThemes(id);
+      expect(th1.active).toBe("ocean");
+
+      expect(await core.selectTheme(id, "neon", 0)).toBe(true);
+      const th2 = await core.getThemes(id);
+      expect(th2.strips[0]).toBe("neon");
+
+      expect(await core.selectTheme(id, "nope")).toBe(false);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("setStripEffect changes the effect on strip 0", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-fx-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      expect(await core.setStripEffect(id, 0, 7)).toBe(true);
+      const st = await core.getState(id);
+      expect(st.effect[0]).toBe(7);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("selectAudioSource changes the active source", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-audio-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      expect(await core.selectAudioSource(id, 2)).toBe(true);
+      const src = await core.getAudioSources(id);
+      expect(src.active).toBe(2);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("setAutoSelect toggles auto-select on and off", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-auto-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      expect(await core.setAutoSelect(id, true)).toBe(true);
+      const src = await core.getAudioSources(id);
+      expect(src.autoSelect).toBe(true);
+
+      expect(await core.setAutoSelect(id, false)).toBe(true);
+      const src2 = await core.getAudioSources(id);
+      expect(src2.autoSelect).toBe(false);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("triggerCinematicTest returns ok", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d3-cin-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+      expect(await core.triggerCinematicTest(id)).toBe(true);
     } finally {
       core.stop();
       fs.rmSync(dir, { recursive: true, force: true });

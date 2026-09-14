@@ -2,13 +2,17 @@
 // renderer talks only to this surface through contextBridge — structured
 // data, no Node APIs, no closures.
 
-import type { StatusSnapshot, CinematicPayload, DevicesPayload, AudioSourcesPayload } from "./types";
+import type { StatusSnapshot, CinematicPayload, DevicesPayload, AudioSourcesPayload, ThemesPayload, StatePayload, AudioSourceOption, ThemeDefWire } from "./types";
 
 export type {
   StatusSnapshot,
   CinematicPayload,
   DevicesPayload,
   AudioSourcesPayload,
+  ThemesPayload,
+  StatePayload,
+  AudioSourceOption,
+  ThemeDefWire,
 };
 
 export type ThemeMode = "system" | "dark" | "light";
@@ -89,5 +93,13 @@ export interface ResonuxApi {
   /** True once the controller answers again (used after a config reboot). */
   waitOnline(id: string, timeoutMs: number): Promise<boolean>;
   finishWizard(): Promise<void>;
+  // ---- D3: main control surface ----
+  getState(id: string): Promise<StatePayload>;
+  getThemes(id: string): Promise<ThemesPayload>;
+  selectTheme(id: string, themeId: string, strip?: number): Promise<boolean>;
+  setStripEffect(id: string, strip: number, effectId: number): Promise<boolean>;
+  selectAudioSource(id: string, source: number): Promise<boolean>;
+  setAutoSelect(id: string, autoSelect: boolean): Promise<boolean>;
+  triggerCinematicTest(id: string): Promise<boolean>;
   onChanged(cb: (snapshot: Snapshot) => void): () => void;
 }

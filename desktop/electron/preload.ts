@@ -19,6 +19,15 @@ const api: ResonuxApi = {
     ipcRenderer.invoke("device:setWifi", id, ssid, password),
   waitOnline: (id: string, timeoutMs: number) => ipcRenderer.invoke("controllers:waitOnline", id, timeoutMs),
   finishWizard: () => ipcRenderer.invoke("settings:finishWizard"),
+  getThemes: (id: string) => ipcRenderer.invoke("device:getThemes", id),
+  getState: (id: string) => ipcRenderer.invoke("device:getState", id),
+  selectTheme: (id: string, themeId: string, strip?: number) =>
+    ipcRenderer.invoke("device:selectTheme", id, themeId, strip),
+  setStripEffect: (id: string, strip: number, effectId: number) =>
+    ipcRenderer.invoke("device:setStripEffect", id, strip, effectId),
+  selectAudioSource: (id: string, source: number) => ipcRenderer.invoke("device:selectAudioSource", id, source),
+  setAutoSelect: (id: string, autoSelect: boolean) => ipcRenderer.invoke("device:setAutoSelect", id, autoSelect),
+  triggerCinematicTest: (id: string) => ipcRenderer.invoke("device:triggerCinematicTest", id),
   onChanged: (cb: (snapshot: Snapshot) => void) => {
     const listener = (_event: unknown, snapshot: Snapshot) => cb(snapshot);
     ipcRenderer.on("app:changed", listener);

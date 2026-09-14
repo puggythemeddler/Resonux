@@ -16,10 +16,11 @@ import type {
   CinematicPayload,
   DevicesPayload,
   AudioSourcesPayload,
+  ThemesPayload,
   ThemeMode,
   ConfigCommandResult,
 } from "../domain/bridge";
-import type { ConfigPayload } from "../domain/types";
+import type { ConfigPayload, StatePayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
 
 type Listener = () => void;
@@ -274,5 +275,55 @@ export class AppCore {
   finishWizard(): void {
     this.settings.patch({ wizardCompleted: true });
     this.emit();
+  }
+
+  // ----------------------------------------------------- D3: control surface
+
+  async getState(id: string): Promise<StatePayload> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    return get<StatePayload>(ep, "/api/state");
+  }
+
+  async getThemes(id: string): Promise<ThemesPayload> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    return get<ThemesPayload>(ep, "/api/themes");
+  }
+
+  private async okCommand(ep: HttpEndpoint | null, path: string, body?: unknown): Promise<boolean> {
+    if (!ep) return false;
+    try {
+      const res = await post<{ ok?: boolean }>(ep, path, body);
+      return res?.ok === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async selectTheme(id: string, themeId: string, strip?: number): Promise<boolean> {
+    const ep = this.endpointFor(id);
+    return this.okCommand(ep, "/api/themes/select", { id: themeId, ...(strip === undefined ? {} : { strip }) });
+  }
+
+  async setStripEffect(id: string, strip: number, effectId: number): Promise<boolean> {
+    const ep = this.endpointFor(id);
+    return this.okCommand(ep, "/api/state/effect", { strip, effectId });
+  }
+
+  async selectAudioSource(id: string, source: number): Promise<boolean> {
+    const ep = this.endpointFor(id);
+    return this.okCommand(ep, "/api/audio/source", { source });
+  }
+
+  async setAutoSelect(id: string, autoSelect: boolean): Promise<boolean> {
+    const ep = this.endpointFor(id);
+    return this.okCommand(ep, "/api/audio/source", { autoSelect });
+  }
+
+  async triggerCinematicTest(id: string): Promise<boolean> {
+    const ep = this.endpointFor(id);
+    // Empty body: the firmware fills in defaults for the QA burst.
+    return this.okCommand(ep, "/api/cinematic/test", {});
   }
 }

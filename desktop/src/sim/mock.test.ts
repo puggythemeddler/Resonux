@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { MockController } from "./mock";
-import type { StatusSnapshot, CinematicPayload } from "../domain/types";
+import type { StatusSnapshot, CinematicPayload, ThemesPayload, AudioSourcesPayload, StatePayload } from "../domain/types";
 
 describe("MockController REST surface", () => {
   const mock = new MockController({ name: "Lab", id: "sim-lab" });
@@ -135,6 +135,185 @@ describe("MockController config writes", () => {
       const status = (await (await fetch(`http://127.0.0.1:${port}/api/status`)).json()) as StatusSnapshot;
       expect(status.device).toBe("New");
       expect(status.uptimeMs).toBeLessThan(1000); // uptime reset by the "reboot"
+    } finally {
+      await m.close();
+    }
+  });
+});
+
+// ---------- D3: themes, effect-per-strip, audio source, cinematic test -----
+
+describe("MockController themes and D3 surface", () => {
+  it("serves a themes payload with built-ins and strips", async () => {
+    const m = new MockController({ id: "sim-themes" });
+    try {
+      await m.listen();
+      const res = await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`);
+      expect(res.status).toBe(200);
+      const t = (await res.json()) as ThemesPayload;
+      expect(t.themes.length).toBeGreaterThanOrEqual(2);
+      expect(t.themes.map((th) => th.id)).toContain("classic");
+      expect(typeof t.active).toBe("string");
+      expect(Array.isArray(t.strips)).toBe(true);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("selects a global theme and a per-strip theme", async () => {
+    const m = new MockController({ id: "sim-thsel" });
+    try {
+      await m.listen();
+      const post = async (body: Record<string, unknown>) =>
+        (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes/select`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })).json();
+
+      await post({ id: "ocean" });
+      const g = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(g.active).toBe("ocean");
+
+      await post({ id: "neon", strip: 0 });
+      const s = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(s.strips[0]).toBe("neon");
+
+      const bad = await post({ id: "nope" });
+      expect((bad as { error?: string }).error).toBe("unknown theme");
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("PUTs a new theme and deletes it", async () => {
+    const m = new MockController({ id: "sim-thput" });
+    try {
+      await m.listen();
+      const u = await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: "custom1",
+          name: "Custom",
+          palette: ["#112233"],
+          brightness: { base: 50, min: 10 },
+          saturation: 100,
+          response: { bass: 1, lowMid: 1, mid: 1, highMid: 1, treble: 1, beat: 1, amp: 1 },
+          animation: { movement: 0.5, pulse: 0.5, flash: 0.5, sparkle: 0.5, smoothing: 0.5, contrast: 0.5, density: 0.5 },
+          effects: [1],
+        }),
+      });
+      expect(u.status).toBe(200);
+      const after = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(after.themes.some((t) => t.id === "custom1")).toBe(true);
+
+      const d = await fetch(`http://127.0.0.1:${m.portNumber}/api/themes?id=custom1`, { method: "DELETE" });
+      expect(d.status).toBe(200);
+      const gone = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(gone.themes.some((t) => t.id === "custom1")).toBe(false);
+
+      const badDel = await fetch(`http://127.0.0.1:${m.portNumber}/api/themes?id=classic`, { method: "DELETE" });
+      expect(badDel.status).toBe(400);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("resets themes to the built-in defaults", async () => {
+    const m = new MockController({ id: "sim-thrst" });
+    try {
+      await m.listen();
+      await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: "tmp", name: "Tmp", palette: ["#aaa"], brightness: { base: 30, min: 5 },
+          saturation: 50, response: { bass: 1, lowMid: 1, mid: 1, highMid: 1, treble: 1, beat: 1, amp: 1 },
+          animation: { movement: 0, pulse: 0, flash: 0, sparkle: 0, smoothing: 0, contrast: 0, density: 0 }, effects: [],
+        }),
+      });
+      const pre = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(pre.themes.some((t) => t.id === "tmp")).toBe(true);
+
+      await fetch(`http://127.0.0.1:${m.portNumber}/api/themes/reset`, { method: "POST" });
+      const post = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/themes`)).json()) as ThemesPayload;
+      expect(post.themes.some((t) => t.id === "tmp")).toBe(false);
+      expect(post.themes.map((t) => t.id)).toContain("classic");
+      expect(post.strips.every((s) => s === "")).toBe(true);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("sets per-strip effect", async () => {
+    const m = new MockController({ id: "sim-fx" });
+    try {
+      await m.listen();
+      const bad = await fetch(`http://127.0.0.1:${m.portNumber}/api/state/effect`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ strip: 0, effectId: 99 }),
+      });
+      expect(bad.status).toBe(400);
+
+      const ok = await fetch(`http://127.0.0.1:${m.portNumber}/api/state/effect`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ strip: 0, effectId: 7 }),
+      });
+      expect(ok.status).toBe(200);
+      const state = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/state`)).json()) as StatePayload;
+      expect(state.effect[0]).toBe(7);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("selects audio source and toggles auto-select", async () => {
+    const m = new MockController({ id: "sim-audio" });
+    try {
+      await m.listen();
+      const pick = await fetch(`http://127.0.0.1:${m.portNumber}/api/audio/source`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: 2 }),
+      });
+      expect(pick.status).toBe(200);
+      const r1 = (await pick.json()) as { ok: boolean; source: number; autoSelect: boolean };
+      expect(r1.ok).toBe(true);
+      expect(r1.source).toBe(2);
+      expect(r1.autoSelect).toBe(false);
+
+      const auto = await fetch(`http://127.0.0.1:${m.portNumber}/api/audio/source`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ autoSelect: true }),
+      });
+      const r2 = (await auto.json()) as { source: number; autoSelect: boolean };
+      expect(r2.source).toBe(2);
+      expect(r2.autoSelect).toBe(true);
+
+      const src = (await (await fetch(`http://127.0.0.1:${m.portNumber}/api/audio/sources`)).json()) as AudioSourcesPayload;
+      expect(src.active).toBe(2);
+      expect(src.autoSelect).toBe(true);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("accepts a cinematic test burst", async () => {
+    const m = new MockController({ id: "sim-cin-test" });
+    try {
+      await m.listen();
+      const res = await fetch(`http://127.0.0.1:${m.portNumber}/api/cinematic/test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean };
+      expect(body.ok).toBe(true);
     } finally {
       await m.close();
     }

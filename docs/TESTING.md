@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 21 tests across 4 suites (no hardware, no
+`cd desktop && npm test` runs 34 tests across 4 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -59,7 +59,10 @@ network peers):
   0–255 validation, honours the cinematic toggle, 404s on unknown routes;
   plus **config writes**: `PUT /api/config` renames the device, the AP-mode
   variant performs the Wi-Fi hand-off (ap → sta, honest `rebooting:false`),
-  and a keep-port `restart()` preserves address + state.
+  and a keep-port `restart()` preserves address + state; plus **the D3
+  surface**: themes list/global + per-strip select/PUT + DELETE/reset, a
+  per-strip effect endpoint with validation, audio source pick + auto-select
+  (both reflected in `/api/audio/sources`), and the cinematic QA burst.
 - `registry.test` — a registered controller heals online and reports latency;
   a controller that stops answering goes offline and **loses its stale status
   stats** (identity survives); a restart brings it back online on the same
@@ -67,9 +70,12 @@ network peers):
 - `app.test` — the full `AppCore` boots, self-starts the simulator, selects it,
   and round-trips live commands; **rename/setWifi write through config with a
   byte-exact backup left in `userData/backups`**; the first-run
-  `wizardNeeded` lifecycle (pick a controller or finish the wizard); and
+  `wizardNeeded` lifecycle (pick a controller or finish the wizard);
   `waitOnline` answers for the running controller and times out honestly for
-  an unknown one.
+  an unknown one; and the **D3 commands** round-trip into the running
+  simulator: `getState`, `getThemes`, `selectTheme` (global + per-strip),
+  `setStripEffect`, `selectAudioSource`, `setAutoSelect`, and
+  `triggerCinematicTest`.
 
 Command parity is the contract: the simulator is deliberately kept in lockstep
 with the firmware REST surface so a desktop surface that works in tests works

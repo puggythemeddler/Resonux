@@ -6,6 +6,10 @@ import { Home } from "./areas/Home";
 import { Setup } from "./areas/Setup";
 import { ComingSoon } from "./areas/ComingSoon";
 import { Wizard } from "./areas/Wizard";
+import { Lights } from "./areas/Lights";
+import { Music } from "./areas/Music";
+import { Themes } from "./areas/Themes";
+import { Cinematic } from "./areas/Cinematic";
 
 type Area = "home" | "setup" | "lights" | "music" | "themes" | "cinematic" | "devices" | "diagnostics" | "settings";
 
@@ -144,6 +148,14 @@ export default function App() {
             <Home snapshot={snapshot} />
           ) : area === "setup" ? (
             <Setup snapshot={snapshot} onRunWizard={() => setManualWizard(true)} />
+          ) : area === "lights" ? (
+            <Lights snapshot={snapshot} />
+          ) : area === "music" ? (
+            <Music snapshot={snapshot} />
+          ) : area === "themes" ? (
+            <Themes snapshot={snapshot} />
+          ) : area === "cinematic" ? (
+            <Cinematic snapshot={snapshot} />
           ) : (
             <ComingSoon area={area} />
           )}

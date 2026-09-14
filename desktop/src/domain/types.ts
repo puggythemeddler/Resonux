@@ -232,6 +232,60 @@ export interface AudioSourcesPayload {
   sources: AudioSourceOption[];
 }
 
+// Theme wire shape (ThemeEngine::encode in ThemeEngine.cpp).
+export interface ThemeDefWire {
+  id: string;
+  name: string;
+  description?: string;
+  builtin: boolean;
+  brightness: { base: number; min: number };
+  saturation: number;
+  palette: string[];            // ["#RRGGBB", ...]
+  response: {
+    bass: number;
+    lowMid: number;
+    mid: number;
+    highMid: number;
+    treble: number;
+    beat: number;
+    amp: number;
+  };
+  animation: {
+    movement: number;
+    pulse: number;
+    flash: number;
+    sparkle: number;
+    smoothing: number;
+    contrast: number;
+    density: number;
+  };
+  effects: number[];
+}
+
+export interface ThemesPayload {
+  themes: ThemeDefWire[];
+  active: string;
+  strips: string[];
+}
+
+// Local fallback labels for built-in effect ids. The authoritive catalog
+// lives in the firmware; these labels are just a sane default so the UI
+// can render a friendly name immediately.
+export const EFFECT_LABELS: Record<number, string> = {
+  1: "Spectrum",
+  2: "Bass Pulse",
+  3: "Beat Flash",
+  4: "Freq Wave",
+  5: "Freq → Colour",
+  6: "Rainbow Music",
+  7: "VU",
+  8: "Energy Pulse",
+  9: "Running Wave",
+  10: "Spark",
+  11: "Bass → Treble",
+  12: "Custom Mapping",
+};
+
 // The full config is a free-form document (ConfigStore dump). Typed surface
 // only where the desktop app currently reads it.
 export interface ConfigPayload {
