@@ -201,7 +201,8 @@ npm run dist                    # package a Windows installer (release/)
 installs the app with a desktop shortcut and needs no Node or toolchain on
 the target machine. A handy, unpacked copy (for USB use or a test run) is
 also left in `desktop/release/win-unpacked`. The bundled exe and installer
-carry the Resonux brand icon (equalizer *R* mark — see `desktop/build/`).
+carry the Resonux brand identity — the *Luminous Node at Resonance* mark on a
+graphite tile (`desktop/build/`, full system in `docs/BRAND.md`).
 
 On first run the app auto-starts its bundled simulator (clearly labelled
 *Simulator*) so Home, Setup and the discovery flow work immediately; a

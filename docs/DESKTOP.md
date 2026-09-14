@@ -295,10 +295,13 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
   no toolchain needed on the target machine.
 - `electron-builder` only ships what the app needs: `dist/**` (compiled main +
   renderer) and `package.json`, into an asar. No source, no tests.
-- The app is **branded**: `build/icon.ico` (multi-size) is embedded in the exe
-  and installer, and the renderer shows the same mark (the equalizer *R* on an
-  amber "filament" tile) in the navrail and the first-run wizard. Source of
-  truth is `build/logo.svg`; regenerate the pixel/ICO set with
+- The app is **branded** with the *Luminous Node at Resonance* identity (see
+  `docs/BRAND.md`): `build/icon.ico` (multi-size, 16–256 PNG entries) is
+  embedded in the exe and installer, and the renderer shows the same mark —
+  an amber resonant ring with a standing-wave filament igniting into a point
+  of light on a dark graphite tile — in the navrail and the first-run wizard.
+  Source of truth is `build/logo.svg` + the generator; regenerate the full
+  pixel/vector set (icon, ICO, mark, wordmark, lockups, favicon) with
   `powershell -File build\make-icon.ps1` from the `desktop/` directory.
 - Auto-update, digital signing, and the tray are deliberately **not** enabled
   yet; the release is unsigned (Windows SmartScreen shows the *"run anyway"*

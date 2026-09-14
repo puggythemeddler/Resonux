@@ -27,6 +27,12 @@
   --space-6: 32px;
 
   --accent-h: 30;
+
+  --dur-f: 90ms;
+  --dur-s: 180ms;
+  --dur-m: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 :root[data-theme="dark"] {
@@ -155,6 +161,7 @@ button {
   width: auto;
   height: auto;
   flex: 0 0 auto;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.4));
 }
 
 .nav-item {

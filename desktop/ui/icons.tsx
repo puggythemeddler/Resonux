@@ -145,26 +145,17 @@ export function Logo({
     >
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffb15c" />
-          <stop offset="1" stopColor="#e8590c" />
+          <stop offset="0" stopColor="#232831" />
+          <stop offset="1" stopColor="#14171b" />
         </linearGradient>
       </defs>
       <rect x="8" y="8" width="240" height="240" rx="56" fill={`url(#${gid})`} />
-      <g fill="#2a1406">
-        <rect x="84" y="60" width="28" height="124" rx="12" />
-        <rect x="84" y="60" width="88" height="28" rx="12" />
-        <rect x="148" y="60" width="24" height="80" rx="12" />
-        <line
-          x1="124"
-          y1="162"
-          x2="184"
-          y2="184"
-          stroke="#2a1406"
-          strokeWidth="24"
-          strokeLinecap="round"
-        />
+      <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#2e3540" strokeWidth="1.5" />
+      <g fill="none" stroke="#f59a3e" strokeWidth="10" strokeLinecap="round">
+        <ellipse cx="128" cy="130" rx="86" ry="86" />
+        <path d="M 63 192 C 100 192 98 136 128 130 S 162 84 192 74" />
       </g>
-      <circle cx="211" cy="67" r="13" fill="#ffe9cf" />
+      <circle cx="192" cy="74" r="17" fill="#ffe9cf" />
     </svg>
   );
 }
