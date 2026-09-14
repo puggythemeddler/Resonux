@@ -77,6 +77,7 @@ function SelectedThemes({ snapshot }: { snapshot: Snapshot }) {
   }
 
   const stripCount = sel.status.stripCount;
+  const themeName = (id: string) => payload.themes.find((t) => t.id === id)?.name ?? id;
   const stripTheme = (i: number) => payload.strips[i] || payload.active;
 
   return (
@@ -84,7 +85,7 @@ function SelectedThemes({ snapshot }: { snapshot: Snapshot }) {
       <section className="page-head">
         <h1>Themes</h1>
         <p>
-          Currently active across {sel.name}: <b>{payload.active}</b>.
+          Currently active across {sel.name}: <b>{themeName(payload.active)}</b>.
         </p>
         {error && <div className="error-banner" style={{ marginTop: "var(--space-3)" }}>{error}</div>}
       </section>
@@ -93,8 +94,9 @@ function SelectedThemes({ snapshot }: { snapshot: Snapshot }) {
         <PinRow
           key={i}
           index={i}
-          themeId={payload.strips[i]}
-          activeThemeId={payload.active}
+          themeLabel={themeName(payload.strips[i])}
+          pinned={Boolean(payload.strips[i])}
+          activeThemeLabel={themeName(payload.active)}
         />
       ))}
 
@@ -117,23 +119,25 @@ function SelectedThemes({ snapshot }: { snapshot: Snapshot }) {
 
 function PinRow({
   index,
-  themeId,
-  activeThemeId,
+  themeLabel,
+  pinned,
+  activeThemeLabel,
 }: {
   index: number;
-  themeId: string;
-  activeThemeId: string;
+  themeLabel: string;
+  pinned: boolean;
+  activeThemeLabel: string;
 }) {
   return (
     <div className="card" style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", paddingTop: "var(--space-3)", paddingBottom: "var(--space-3)" }}>
       <span className="grow">
         Strip {index + 1}
         <div className="sub">
-          {themeId ? `Pinned to its own theme: ${themeId}` : "Follows the controller-wide theme"}
+          {pinned ? `Pinned to its own theme: ${themeLabel}` : "Follows the controller-wide theme"}
         </div>
       </span>
       <span className="sub" style={{ maxWidth: "28ch", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        global: {activeThemeId}
+        {pinned ? `controller-wide: ${activeThemeLabel}` : ""}
       </span>
     </div>
   );

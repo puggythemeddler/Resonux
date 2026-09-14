@@ -331,8 +331,9 @@ their outcome to the session event stream:
 | `src/core/report.test.ts` (4) | **D4**: serialises app/controller/check/log into JSON; excludes addresses, ports, Wi-Fi credentials, and passwords; null check serialises honestly; `suggestedReportName` sanitises the controller name |
 | `src/diagnostics/check.test.ts` (6) | **D4**: `blipTarget` bounds; healthy live controller passes every step + restores brightness; unanswerable controller fails fast; flat audio and a write that won't restore are honest *warns*; full `runHardwareCheck` against the in-process simulator passes and labels itself *Simulator* |
 | `src/core/update.test.ts` (7) | **D7**: `compareVersions` — equal versions, v-prefix tolerance, major/minor/patch ordering, missing-components-equal-zero, trailing-digit suffixes; `fetchLatestRelease` — happy path parses tag + url, HTTP 404 fails honestly, non-release payload fails honestly |
+| `src/format.test.ts` (2) | **D7 (UX audit)**: `fmtSystemState` maps the firmware's raw system-state tokens ("reactive"/"sleeping"/"booting") to plain language and neutral-cases anything unknown |
 
-**66 host tests** across the eight suites, plus the firmware gate
+**68 host tests** across the nine suites, plus the firmware gate
 (`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
@@ -390,6 +391,29 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
   queries the GitHub Releases API and links the user to the newest published
   build when one exists.
 
+### Auto-update feasibility (investigated)
+
+Silent auto-update is **blocked on code signing, not on engineering**. Findings:
+
+- `electron-updater` (the NSIS update path for this installer) verifies the
+  downloaded installer's Authenticode signature against the `publisherName` in
+  `app-update.yml` before it will install it.
+- An unsigned NSIS installer is exactly what Windows SmartScreen blocks with
+  *"Windows protected your PC"* / *Unknown publisher* — so without a cert the
+  "silent" install isn't silent, it's a scary prompt for a non-technical user
+  (and is flaky for those who miss the "More info" link).
+- The engineering path is fully known and is the standard one:
+  1. Obtain an Authenticode cert (OV individual/org, ~1–3 year terms).
+  2. Sign builds during `electron-builder` packing (`win.certificateFile` +
+     password, or `WIN_CSC_LINK`, and set `win.verifyUpdateCodeSignature` /
+     `publisherName`).
+  3. Wire `electron-updater` with the **GitHub** provider and the existing
+     releases API surface, with `autoDownload = true` (differential updates
+     for NSIS) and install on quit.
+
+  Until a cert is obtained the read-only check is the honest design: the app
+  never silently scripts an unsigned installer onto a user's machine.
+
 ## Phase plan
 
 | Phase | Scope | Status |
@@ -400,7 +424,7 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
 | **4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step), health; session event log (in-memory, secret-free), structured report export (no secrets/addresses), restart/power-off behind confirms | **in repo, builds + 53 host tests green** |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
 | **6** | Firmware & recovery: OTA update (via the firmware's `/api/ota`), config backup/restore (byte-exact, confirms), flash recovery via bundled esptool | **OTA + backup/restore in repo, builds + 59 host tests green; esptool serial flash recovery pending (needs a bundled serial toolchain)** |
-| **7** | Polish: installer (electron-builder), close-to-tray system tray, read-only GitHub-releases update check in Settings, UX audit vs `.impeccable` review standards | **installer + tray + update check in repo, builds + 66 host tests green; silent auto-update pending (unsigned build); UX audit pending** |
+| **7** | Polish: installer (electron-builder), close-to-tray system tray, read-only GitHub-releases update check in Settings, UX audit vs `.impeccable` review standards | **all in repo, builds + 68 host tests green; silent auto-update pending (blocked on code signing — see feasibility note)** |
 
 Rules for the plan: every phase changes README + the docs that describe it in
 the same commit; destructive capabilities (restore, reset, flash) get explicit
@@ -425,3 +449,26 @@ desktop app's bar, not rewritten:
   "conditioning").
 - Demo/simulator honesty: clearly labelled, never substitutes for hardware
   QA claims.
+
+### UX audit (Phase 7)
+
+A full pass against the standards above found the surface holding up; the
+concrete violations found and fixed in the same phase:
+
+- **Firmware vocabulary leaking into the UI.** The Home "System" stat showed
+  the raw state token the firmware speaks in (`reactive`/`sleeping`); it now
+  reads *Reactive*/*Sleeping* via `fmtSystemState` (unknown states get
+  neutral-cased, never shown raw). "Free heap" became *Free memory*.
+- **Raw theme IDs where a name belongs.** The Themes header showed the active
+  theme's *id* and each pin row's `themeId`/`global: <id>`; all now resolve to
+  the theme's display name, falling back to the id only when the controller
+  reports a theme we don't know about.
+- **Term without help.** The "Conditioning" chip on detected inputs gains a
+  hover explanation, so a first-timer isn't left guessing.
+
+Verified as *not* violations (deliberately kept): brightness swings are always
+percent with one slider primitive; every write from Lights/Music/Themes hits a
+live state endpoint (no config PUT, no reboots); destructive operations
+(restart, power-off, restore config) stay behind `ConfirmDialog`s; palettes
+live as CSS variables with component hex only in themed *data* (swatches) and
+the brand mark; every simulator path is clearly labelled.

@@ -193,7 +193,7 @@ asks the user to confirm the LEDs actually lit up. See `docs/DESKTOP.md`.
 cd desktop
 npm install
 npm run typecheck               # tsc (main + renderer)
-npm test                        # vitest — 66 host tests, no hardware
+npm test                        # vitest — 68 host tests, no hardware
 npm run build                   # tsc main + vite renderer
 npm start                       # build + launch the Control Center
 npm run dist                    # package a Windows installer (release/)
@@ -332,7 +332,7 @@ bass/mid/treble, beat, free heap).
   cinematic-test surface, registry health/offline/heal rules, AppCore boot →
   simulator → live commands + first-run wizard lifecycle + D3 control surface
   + D4 hardware-check engine + session log + secret-free report export + D5
-  firmware OTA + config backup/restore + update version check — 66 tests).
+  firmware OTA + config backup/restore + update version check — 68 tests).
 - `python tools/companion/resonux_companion.py --once --sim` — send simulated
   SceneFrames over the LAN with zero third-party dependencies
   (`docs/CINEMATIC.md`).

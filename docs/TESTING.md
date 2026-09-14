@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 66 tests across 8 suites (no hardware, no
+`cd desktop && npm test` runs 68 tests across 9 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -109,6 +109,10 @@ network peers):
   `-beta`/`-rc` tag above its plain release; `fetchLatestRelease` parses the
   GitHub Releases API shape and fails honestly on both HTTP errors and
   non-release payloads (injected fake `fetch`, no network).
+- `format.test` — the **UX audit** vocabulary mapper (`fmtSystemState`): the
+  firmware's raw system-state tokens map to plain language ("reactive" →
+  "Reactive", "sleeping" → "Sleeping", "booting" → "Starting up"), and unknown
+  tokens get neutral-cased rather than leaked into the surface.
 
 Command parity is the contract: the simulator is deliberately kept in lockstep
 with the firmware REST surface so a desktop surface that works in tests works

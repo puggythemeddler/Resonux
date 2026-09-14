@@ -36,3 +36,21 @@ export function fmtClockOffset(offsetMs: number | undefined): string {
   if (typeof offsetMs !== "number") return "—";
   return offsetMs === 0 ? "0 ms" : `${offsetMs > 0 ? "+" : ""}${offsetMs} ms`;
 }
+
+// The firmware reports its system state in its own vocabulary ("reactive",
+// "sleeping"). The UI never shows those tokens: map known states to plain
+// language and neutral-case anything unknown.
+export function fmtSystemState(state: string): string {
+  switch (state) {
+    case "reactive":
+      return "Reactive";
+    case "sleeping":
+      return "Sleeping";
+    case "booting":
+      return "Starting up";
+    case "":
+      return "—";
+    default:
+      return state.charAt(0).toUpperCase() + state.slice(1);
+  }
+}

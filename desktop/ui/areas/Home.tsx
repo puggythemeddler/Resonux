@@ -13,6 +13,7 @@ import {
   brightnessToWire,
   fmtLatency,
   fmtClockOffset,
+  fmtSystemState,
 } from "../format";
 
 interface HomeProps {
@@ -150,10 +151,10 @@ function SelectedHome({
         <div className="stat-grid">
           <Stat k="Frames / sec" v={status.fps} highlight />
           <Stat k="Up time" v={fmtUptime(status.uptimeMs)} />
-          <Stat k="Free heap" v={fmtBytes(status.heap)} />
+          <Stat k="Free memory" v={fmtBytes(status.heap)} />
           <Stat k="Strips" v={status.stripCount} />
           <Stat k="Latency" v={fmtLatency(latencyMs)} />
-          <Stat k="System" v={status.system.state} />
+          <Stat k="System" v={fmtSystemState(status.system.state)} />
         </div>
         <p className="sub">
           {wifi.connected ? "Connected to " : "Access point "}
@@ -230,7 +231,10 @@ function DeviceRowView({ row }: { row: DeviceRow }) {
         </div>
       </span>
       {row.needsConditioning && (
-        <span className="chip degraded">
+        <span
+          className="chip degraded"
+          title="This input is still settling after being detected. It normally clears by itself within a moment."
+        >
           <span className="dot" />
           Conditioning
         </span>
