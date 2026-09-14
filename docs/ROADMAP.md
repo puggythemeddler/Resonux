@@ -33,7 +33,7 @@ updated in the same commit.
 | Phase | Scope | Status |
 |---|---|---|
 | **D1** | Architecture, framework choice (Electron), client layer (REST + UDP discovery), honest simulator, app shell with Home + Setup, IPC contract, smoke boot | **in repo, builds + 14 host tests green, smoke boot verified** |
-| **D2** | First-run setup wizard (highest priority): guided connect, verify, rename, Wi-Fi hand-off, honest errors | planned |
+| **D2** | First-run setup wizard (highest priority): guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
 | **D3** | Main Control Center: Lights (by name), Music (plain-language sources), Themes (swatches), Cinematic (QA bursts) | planned |
 | **D4** | Diagnostics + system controls: health, logs, export-amended reports (no secrets), restart/power-off behind confirms | planned |
 | **D5** | Firmware & recovery: `/api/ota` update, backup/restore, esptool flash recovery | planned |

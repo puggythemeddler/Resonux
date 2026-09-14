@@ -4,9 +4,10 @@ import { Card, Button, HealthChip, KindChip } from "../components";
 
 interface SetupProps {
   snapshot: Snapshot;
+  onRunWizard: () => void;
 }
 
-export function Setup({ snapshot }: SetupProps) {
+export function Setup({ snapshot, onRunWizard }: SetupProps) {
   const [scanning, setScanning] = useState(false);
 
   const rescan = async () => {
@@ -26,6 +27,12 @@ export function Setup({ snapshot }: SetupProps) {
           A few guided steps to link Control Center to your Resonux controller.
           No terminal, no cables into your laptop — just Wi-Fi and two buttons.
         </p>
+        <div className="row" style={{ marginTop: "var(--space-3)" }}>
+          <Button variant="primary" icon="home" onClick={onRunWizard}>
+            Run the setup guide
+          </Button>
+          <span className="sub">The full walk-through: find, verify, name, and Wi-Fi.</span>
+        </div>
       </section>
 
       <Card

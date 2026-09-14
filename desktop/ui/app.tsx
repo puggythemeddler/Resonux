@@ -5,6 +5,7 @@ import { HealthChip, SimulatorChip } from "./components";
 import { Home } from "./areas/Home";
 import { Setup } from "./areas/Setup";
 import { ComingSoon } from "./areas/ComingSoon";
+import { Wizard } from "./areas/Wizard";
 
 type Area = "home" | "setup" | "lights" | "music" | "themes" | "cinematic" | "devices" | "diagnostics" | "settings";
 
@@ -33,6 +34,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [area, setArea] = useState<Area>("home");
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
+  const [manualWizard, setManualWizard] = useState(false);
 
   useEffect(() => {
     void window.resonux.getInfo().then(setInfo);
@@ -70,6 +72,12 @@ export default function App() {
   const selected = snapshot?.selected;
 
   const areaTitle = useMemo(() => NAV.find((n) => n.id === area)?.label ?? "", [area]);
+
+  const wizardOpen = manualWizard || Boolean(snapshot?.wizardNeeded);
+  const closeWizard = () => {
+    setManualWizard(false);
+    void window.resonux.finishWizard();
+  };
 
   return (
     <div className="shell">
@@ -135,12 +143,14 @@ export default function App() {
           ) : area === "home" ? (
             <Home snapshot={snapshot} />
           ) : area === "setup" ? (
-            <Setup snapshot={snapshot} />
+            <Setup snapshot={snapshot} onRunWizard={() => setManualWizard(true)} />
           ) : (
             <ComingSoon area={area} />
           )}
         </div>
       </main>
+
+      {wizardOpen && snapshot && <Wizard snapshot={snapshot} onClose={closeWizard} />}
     </div>
   );
 }

@@ -3,8 +3,10 @@
 // together and exposes the command surface the renderer calls over IPC.
 
 import { ControllerRegistry } from "../client/registry";
-import { get, post, HttpError } from "../client/http";
+import { get, getText, post, put, HttpError, describeError } from "../client/http";
 import { MockController } from "../sim/mock";
+import fs from "node:fs";
+import path from "node:path";
 import { SettingsStore } from "./settings";
 import type {
   AppInfo,
@@ -15,7 +17,9 @@ import type {
   DevicesPayload,
   AudioSourcesPayload,
   ThemeMode,
+  ConfigCommandResult,
 } from "../domain/bridge";
+import type { ConfigPayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
 
 type Listener = () => void;
@@ -87,11 +91,11 @@ export class AppCore {
   }
 
   snapshot(): Snapshot {
-    return this.registry.snapshot(
-      this.settings.get().selectedControllerId,
-      this.settings.get(),
-      this.simulatorRunning
-    );
+    const settings = this.settings.get();
+    return {
+      ...this.registry.snapshot(settings.selectedControllerId, settings, this.simulatorRunning),
+      wizardNeeded: !settings.wizardCompleted && settings.selectedControllerId === null,
+    };
   }
 
   // ---------------------------------------------------------- settings
@@ -187,8 +191,88 @@ export class AppCore {
 
   async setCinematic(id: string, enabled: boolean): Promise<boolean> {
     const ep = this.endpointFor(id);
-    if (!ep) return false;
-    const res = await post<{ ok?: boolean }>(ep, "/api/cinematic", { enabled });
-    return res?.ok === true;
+    if (!ep) return Promise.resolve(false);
+    return post<{ ok?: boolean }>(ep, "/api/cinematic", { enabled }).then(
+      (res) => res?.ok === true,
+      () => false
+    );
+  }
+
+  // ----------------------------------------------------- config writes
+
+  // Byte-exact snapshot of the current config, parked in userData/backups
+  // before any config-writing command. The path is surfaced so recovery can
+  // replay it later; the file itself is never read here.
+  private backupConfig(ep: HttpEndpoint, id: string): string | null {
+    try {
+      const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "-");
+      const dir = path.join(this.settings.dataDir, "backups");
+      fs.mkdirSync(dir, { recursive: true });
+      void getText(ep, "/api/config").then((text) => {
+        const file = path.join(dir, `config-${safeId}-${Date.now()}.json`);
+        try {
+          fs.writeFileSync(file, text, "utf8");
+        } catch {
+          // Backup is best-effort; the command itself still proceeds.
+        }
+      });
+      return dir;
+    } catch {
+      return null;
+    }
+  }
+
+  async renameController(id: string, name: string): Promise<ConfigCommandResult> {
+    const ep = this.endpointFor(id);
+    if (!ep) return { ok: false, rebootApplied: false, backupPath: null, detail: `Unknown controller: ${id}` };
+    const trimmed = name.trim();
+    if (!trimmed) return { ok: false, rebootApplied: false, backupPath: null, detail: "Name must not be empty" };
+    try {
+      const backupPath = this.backupConfig(ep, id);
+      // GET-then-PUT round-trips the full config document: the firmware stores
+      // whatever the PUT body is verbatim, so unknown keys survive untouched.
+      const cfg = await get<ConfigPayload>(ep, "/api/config");
+      const merged = { ...cfg, deviceName: trimmed };
+      await put(ep, "/api/config", merged);
+      return { ok: true, rebootApplied: true, backupPath };
+    } catch (err) {
+      return { ok: false, rebootApplied: false, backupPath: null, detail: describeError(err) };
+    }
+  }
+
+  async setWifi(id: string, ssid: string, password: string): Promise<ConfigCommandResult> {
+    const ep = this.endpointFor(id);
+    if (!ep) return { ok: false, rebootApplied: false, backupPath: null, detail: `Unknown controller: ${id}` };
+    const trimmedSsid = ssid.trim();
+    if (!trimmedSsid) return { ok: false, rebootApplied: false, backupPath: null, detail: "Wi-Fi name must not be empty" };
+    // Password never leaves this method — not logged, not persisted.
+    try {
+      const backupPath = this.backupConfig(ep, id);
+      const cfg = await get<ConfigPayload>(ep, "/api/config");
+      const net = cfg.net ?? { enabled: true, mode: 0, apSsid: "Resonux", apPassword: "", staSsid: "", staPassword: "" };
+      const merged: ConfigPayload = { ...cfg, net: { ...net, staSsid: trimmedSsid, staPassword: password } };
+      await put(ep, "/api/config", merged);
+      return { ok: true, rebootApplied: true, wifiApplied: true, backupPath };
+    } catch (err) {
+      return { ok: false, rebootApplied: false, backupPath: null, detail: describeError(err) };
+    }
+  }
+
+  // Polls the registry (which is already health-checking every entry) until
+  // the controller is answering again. Used after a config write that reboots
+  // the unit — honest timeout, never an infinite spinner.
+  async waitOnline(id: string, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const c = this.registry.list().find((x) => x.id === id);
+      if (c?.online && c.health === "ok") return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
+  }
+
+  finishWizard(): void {
+    this.settings.patch({ wizardCompleted: true });
+    this.emit();
   }
 }

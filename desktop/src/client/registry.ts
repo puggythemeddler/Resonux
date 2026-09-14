@@ -8,7 +8,7 @@ import { performance } from "node:perf_hooks";
 import { get, HttpError, type HttpEndpoint } from "./http";
 import { UdpDiscovery, type DiscoveredController } from "./discovery";
 import { type StatusSnapshot } from "../domain/types";
-import type { AppSettings, ControllerInfo, Snapshot } from "../domain/bridge";
+import type { AppSettings, ControllerInfo, SnapshotBase } from "../domain/bridge";
 
 type Listener = () => void;
 
@@ -196,7 +196,7 @@ export class ControllerRegistry {
     await Promise.all(ids.map((id) => this.pollEntry(id)));
   }
 
-  snapshot(selectedId: string | null, settings: AppSettings, simulatorRunning: boolean): Snapshot {
+  snapshot(selectedId: string | null, settings: AppSettings, simulatorRunning: boolean): SnapshotBase {
     const controllers = this.list();
     const selectedInfo = controllers.find((c) => c.id === selectedId) ?? null;
     const st = selectedInfo ? this.statusOf(selectedInfo.id) : null;

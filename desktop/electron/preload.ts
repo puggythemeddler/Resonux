@@ -14,6 +14,11 @@ const api: ResonuxApi = {
   getCinematic: (id: string) => ipcRenderer.invoke("device:getCinematic", id),
   getDevices: (id: string) => ipcRenderer.invoke("device:getDevices", id),
   getAudioSources: (id: string) => ipcRenderer.invoke("device:getAudioSources", id),
+  renameController: (id: string, name: string) => ipcRenderer.invoke("device:rename", id, name),
+  setWifi: (id: string, ssid: string, password: string) =>
+    ipcRenderer.invoke("device:setWifi", id, ssid, password),
+  waitOnline: (id: string, timeoutMs: number) => ipcRenderer.invoke("controllers:waitOnline", id, timeoutMs),
+  finishWizard: () => ipcRenderer.invoke("settings:finishWizard"),
   onChanged: (cb: (snapshot: Snapshot) => void) => {
     const listener = (_event: unknown, snapshot: Snapshot) => cb(snapshot);
     ipcRenderer.on("app:changed", listener);

@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 14 tests across 4 suites (no hardware, no
+`cd desktop && npm test` runs 21 tests across 4 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -56,13 +56,20 @@ network peers):
   datagrams (keeps the desktop scanner byte-compatible with the C++ codec).
 - `mock.test` — the `MockController` simulator serves firmware-identical JSON
   (`/api/status`, `/api/cinematic`, state endpoints), mutates brightness with
-  0–255 validation, honours the cinematic toggle, 404s on unknown routes.
+  0–255 validation, honours the cinematic toggle, 404s on unknown routes;
+  plus **config writes**: `PUT /api/config` renames the device, the AP-mode
+  variant performs the Wi-Fi hand-off (ap → sta, honest `rebooting:false`),
+  and a keep-port `restart()` preserves address + state.
 - `registry.test` — a registered controller heals online and reports latency;
   a controller that stops answering goes offline and **loses its stale status
-  stats** (identity survives); removal works.
-- `app.test` — the full `AppCore` boots, self-starts the simulator, selects
-  it, and round-trips live commands; stopping the simulator drops it from the
-  snapshot.
+  stats** (identity survives); a restart brings it back online on the same
+  address (the config-reboot path); removal works.
+- `app.test` — the full `AppCore` boots, self-starts the simulator, selects it,
+  and round-trips live commands; **rename/setWifi write through config with a
+  byte-exact backup left in `userData/backups`**; the first-run
+  `wizardNeeded` lifecycle (pick a controller or finish the wizard); and
+  `waitOnline` answers for the running controller and times out honestly for
+  an unknown one.
 
 Command parity is the contract: the simulator is deliberately kept in lockstep
 with the firmware REST surface so a desktop surface that works in tests works

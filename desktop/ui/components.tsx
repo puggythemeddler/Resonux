@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { HealthKind } from "../src/domain/bridge";
 import { Icon, type IconName } from "./icons";
 
@@ -128,6 +128,47 @@ export function Stat({
         {v}
         {unit && <small> {unit}</small>}
       </div>
+    </div>
+  );
+}
+
+// Friendly, plain-language error block: say what happened and what to do next,
+// never jargon. The technical detail stays behind a disclosure so an expert
+// can still read it — the default surface never dumps it.
+export function ErrorDetail({
+  what,
+  hint,
+  detail,
+  onRetry,
+}: {
+  what: string;
+  hint?: string;
+  detail?: string;
+  onRetry?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="errorbox" role="alert">
+      <div className="error-title">
+        <Icon name="alert" size={16} />
+        {what}
+      </div>
+      {hint && <p>{hint}</p>}
+      {(onRetry || detail) && (
+        <div className="error-actions">
+          {onRetry && (
+            <button className="btn" onClick={onRetry}>
+              Try again
+            </button>
+          )}
+          {detail && (
+            <button className="link" onClick={() => setOpen((o) => !o)}>
+              {open ? "Hide advanced details" : "Advanced details"}
+            </button>
+          )}
+        </div>
+      )}
+      {open && detail && <pre className="error-detail">{detail}</pre>}
     </div>
   );
 }

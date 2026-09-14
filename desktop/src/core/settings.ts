@@ -10,13 +10,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
   selectedControllerId: null,
   simulatorRunning: true,
+  wizardCompleted: false,
 };
 
 export class SettingsStore {
   private readonly file: string;
+  private readonly dir: string;
   private settings: AppSettings;
 
   constructor(dataDir: string) {
+    this.dir = dataDir;
     this.file = path.join(dataDir, "settings.json");
     this.settings = this.load();
     // First run: no file, no controller — a simulator keeps the app alive and
@@ -27,6 +30,10 @@ export class SettingsStore {
     }
   }
 
+  get dataDir(): string {
+    return this.dir;
+  }
+
   private load(): AppSettings {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as Partial<AppSettings>;
@@ -34,6 +41,7 @@ export class SettingsStore {
         theme: ["system", "dark", "light"].includes(raw.theme ?? "") ? (raw.theme as ThemeMode) : "system",
         selectedControllerId: typeof raw.selectedControllerId === "string" ? raw.selectedControllerId : null,
         simulatorRunning: typeof raw.simulatorRunning === "boolean" ? raw.simulatorRunning : true,
+        wizardCompleted: typeof raw.wizardCompleted === "boolean" ? raw.wizardCompleted : false,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };

@@ -19,6 +19,7 @@ export interface AppSettings {
   theme: ThemeMode;
   selectedControllerId: string | null;
   simulatorRunning: boolean;
+  wizardCompleted: boolean;
 }
 
 export interface ControllerInfo {
@@ -38,13 +39,30 @@ export interface ControllerInfo {
   fps?: number;
 }
 
-export interface Snapshot {
+export interface SnapshotBase {
   controllers: ControllerInfo[];
   selectedId: string | null;
   selected: (ControllerInfo & { status: StatusSnapshot }) | null;
   simulatorRunning: boolean;
   settings: AppSettings;
   lastScanMs: number;
+}
+
+export interface Snapshot extends SnapshotBase {
+  /** True on first run (no controller chosen yet) — the app shows the wizard. */
+  wizardNeeded: boolean;
+}
+
+// Result of a config-writing command (rename, Wi-Fi). The firmware replies,
+// then reboots to apply — rebootApplied is true whenever the write went
+// through, regardless of the reply race. A byte-exact backup is left behind
+// before any write so a later phase can restore on failure.
+export interface ConfigCommandResult {
+  ok: boolean;
+  rebootApplied: boolean;
+  wifiApplied?: boolean;
+  backupPath: string | null;
+  detail?: string;
 }
 
 export interface AppInfo {
@@ -66,5 +84,10 @@ export interface ResonuxApi {
   getCinematic(id: string): Promise<CinematicPayload>;
   getDevices(id: string): Promise<DevicesPayload>;
   getAudioSources(id: string): Promise<AudioSourcesPayload>;
+  renameController(id: string, name: string): Promise<ConfigCommandResult>;
+  setWifi(id: string, ssid: string, password: string): Promise<ConfigCommandResult>;
+  /** True once the controller answers again (used after a config reboot). */
+  waitOnline(id: string, timeoutMs: number): Promise<boolean>;
+  finishWizard(): Promise<void>;
   onChanged(cb: (snapshot: Snapshot) => void): () => void;
 }

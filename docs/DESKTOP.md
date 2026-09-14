@@ -139,12 +139,12 @@ process by the desktop app in a later phase — the user never runs Python.
 
 ## Domain model
 
-- `src/domain/types.ts` — firmware wire types (1:1 as above).
+- `src/domain/types.ts` — firmware wire types (1:1 as above) + local default
+  labels where a catalog doesn't exist yet.
 - `src/domain/discovery.ts` — RESO_DISCOVER codec port (+ `buildDiscoverResponse`
   for the simulator/tests).
 - `src/domain/bridge.ts` — `ResonuxApi`, the IPC contract; `Snapshot`,
-  `ControllerInfo`, `AppSettings`, health states.
-- `src/domain/catalog.ts` — local default labels only (device catalogs win).
+  `ControllerInfo`, `AppSettings`, health states, `ConfigCommandResult`.
 
 ## Client layer (Phase 1)
 
@@ -170,20 +170,52 @@ process by the desktop app in a later phase — the user never runs Python.
 - Registered with the registry as `kind: "simulator"` so the UI always shows
   it for what it is.
 
+## Config writes & first-run (Phase 2)
+
+The wizard (`ui/areas/Wizard.tsx`) is a full-screen, modal guide:
+Welcome → Find → Verify → Name → Wi-Fi → Done. Every failure surfaces through
+`ErrorDetail` (`ui/components.tsx`): *what happened / why / what to do* /
+Try again / an "advanced details" disclosure. It never dumps a stack trace
+by default.
+
+- First run is real: `settings.wizardCompleted` is false until the user picks a
+  controller or explicitly skips — the snapshot's `wizardNeeded` drives the
+  modal. Skipping finishes the wizard (no nagging every boot); Setup re-opens
+  it anytime.
+- Rename and Wi-Fi hand-off go through `AppCore`, never the renderer:
+  - `renameController(id, name)` / `setWifi(id, ssid, password)` do a
+    GET-then-PUT round-trip of the **full config document** (the firmware
+    stores the PUT body verbatim, so unknown keys survive).
+  - Before the write they park a **byte-exact backup** of the current config in
+    `userData/backups/config-<id>-<timestamp>.json`, so a later phase can
+    replay a failed change (P0 of the web dashboard was an unguarded config PUT).
+  - The Wi-Fi password is used in the request only — never logged, never
+    written to settings.
+  - Both return `ConfigCommandResult { ok, rebootApplied, backupPath, detail }`.
+- A real config write reboots the unit, so after an accepted write the wizard
+  calls `waitOnline(id, timeoutMs)` (poll the existing registry health — honest
+  timeout, no infinite spinner) before claiming success. Wi-Fi uses 60 s (the
+  join itself takes a while), rename 20 s.
+- The simulator implements `PUT /api/config` honestly (`rebooting: false` —
+  it applies instantly, it has no reboot) and offers an AP-mode variant
+  (`MockController({ apMode: true })`) that performs the Wi-Fi hand-off it runs
+  through the same endpoint a real hotspot-mode unit would. It can also
+  `restart()` on the same loopback port, exercising the registry's
+  offline→heal path that a real config-reboot triggers.
+
 ## Testing (host, no hardware)
 
 `desktop/test` runs via vitest; dev command `npm test` in `desktop/`.
 
 | Suite | Covers |
 |---|---|
-| `src/domain/discovery.test.ts` | codec round-trip, lenient unknown-key parse, non-responder rejection — keeps the TS port byte-compatible with the C++ codec |
-| `src/sim/mock.test.ts` | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s |
-| `src/client/registry.test.ts` | simulator health → online; going offline clears stale status (identity survives); removal |
-| `src/core/app.test.ts` | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop |
+| `src/domain/discovery.test.ts` (5) | codec round-trip, lenient unknown-key parse, non-responder rejection — keeps the TS port byte-compatible with the C++ codec |
+| `src/sim/mock.test.ts` (7) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; keep-port restart |
+| `src/client/registry.test.ts` (4) | simulator health → online; going offline clears stale status (identity survives); offline→heal after a restart; removal |
+| `src/core/app.test.ts` (5) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline` |
 
-Repository-wide, `pio test -e native` remains the firmware gate (144 tests)
-and `web` runs `tsc --noEmit` + `npm run build`. The desktop app adds its own
-verification lane: `npm run typecheck`, `npm test`, `npm run build`.
+**21 host tests** across the four suites, plus the firmware gate
+(`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
 
@@ -208,8 +240,8 @@ $env:RESONUX_SMOKE="1"; npx electron .; Remove-Item Env:RESONUX_SMOKE
 
 | Phase | Scope | Status |
 |---|---|---|
-| **1** | Architecture + client layer + discovery + simulator + app shell (Home/Setup) | **in repo, builds + tests green** |
-| **2** | First-run setup wizard (highest priority): guided connect, verify, rename, Wi-Fi handoff, honest errors | planned |
+| **1** | Architecture + client layer + discovery + simulator + app shell (Home/Setup) | **in repo, builds + 14 host tests green** |
+| **2** | First-run setup wizard: guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
 | **3** | Main Control Center: Lights (per strip, by name), Music (sources, plain language), Themes (swatches) | planned |
 | **4** | Diagnostics: health, logs, structured reports (no secrets), restart/power-off with confirms | planned |
 | **5** | Cinematic: scenes, moods, comfort, QA test bursts, companion status | planned |

@@ -72,6 +72,14 @@ function registerIpc(): void {
   ipcMain.handle("device:getCinematic", (_e, id: string) => core?.getCinematic(id));
   ipcMain.handle("device:getDevices", (_e, id: string) => core?.getDevices(id));
   ipcMain.handle("device:getAudioSources", (_e, id: string) => core?.getAudioSources(id));
+  ipcMain.handle("device:rename", (_e, id: string, name: string) => core?.renameController(id, name));
+  ipcMain.handle("device:setWifi", (_e, id: string, ssid: string, password: string) =>
+    core?.setWifi(id, ssid, password)
+  );
+  ipcMain.handle("controllers:waitOnline", (_e, id: string, timeoutMs: number) =>
+    core?.waitOnline(id, timeoutMs)
+  );
+  ipcMain.handle("settings:finishWizard", () => core?.finishWizard());
 }
 
 app.whenReady().then(() => {

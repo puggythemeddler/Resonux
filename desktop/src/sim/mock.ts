@@ -14,6 +14,7 @@ import type { DevicesPayload } from "../domain/types";
 export interface MockControllerOptions {
   name?: string;
   id?: string;
+  apMode?: boolean;
 }
 
 function clamp01(v: number): number {
@@ -22,10 +23,14 @@ function clamp01(v: number): number {
 
 export class MockController {
   readonly id: string;
-  readonly name: string;
+  private _name: string;
+  private _apMode: boolean;
   private server: http.Server | null = null;
   private port = 0;
   private ticks = 0;
+  private netSsid = "";
+  private netPassword = "";
+  private netMode = 1; // 0 = ap only, 1 = sta
 
   private status: StatusSnapshot = {
     ok: true,
@@ -46,7 +51,20 @@ export class MockController {
 
   constructor(opts: MockControllerOptions = {}) {
     this.id = opts.id ?? "sim-demo";
-    this.name = opts.name ?? "Demo Room";
+    this._name = opts.name ?? "Demo Room";
+    this._apMode = Boolean(opts.apMode);
+    if (this._apMode) {
+      this.status.wifi = { mode: "ap", ip: "192.168.4.1", connected: false };
+      this.netMode = 0;
+    }
+  }
+
+  get name(): string {
+    return this._name;
+  }
+
+  get apMode(): boolean {
+    return this._apMode;
   }
 
   listen(): Promise<number> {
@@ -71,6 +89,22 @@ export class MockController {
       if (!this.server) return resolve();
       this.server.close(() => resolve());
       this.server = null;
+    });
+  }
+
+  // Closes and re-listens on the SAME loopback port, keeping state. Lets the
+  // reconnect path be exercised honestly: address and id stay stable while the
+  // server itself is briefly gone — like a controller restart after a config
+  // write, minus the physical reboot.
+  async restart(): Promise<void> {
+    await this.close();
+    await new Promise<void>((resolve, reject) => {
+      this.server = http.createServer((req, res) => this.route(req, res));
+      this.server.on("error", reject);
+      this.server.listen(this.port, "127.0.0.1", () => {
+        this.ticks = 0;
+        resolve();
+      });
     });
   }
 
@@ -189,12 +223,34 @@ export class MockController {
           masterBrightness: this.brightness,
           net: {
             enabled: true,
-            mode: 0,
+            mode: this.netMode,
             apSsid: "Resonux",
             apPassword: "",
-            staSsid: "",
-            staPassword: "",
+            staSsid: this.netSsid,
+            staPassword: this.netPassword,
           },
+        });
+        return;
+      }
+      case "PUT /api/config": {
+        void readBody().then((b) => {
+          if (typeof b.deviceName === "string" && b.deviceName.trim()) {
+            this._name = b.deviceName.trim();
+            this.status.device = this._name;
+          }
+          const net = (b.net as Record<string, unknown> | undefined) ?? {};
+          if (typeof net.staSsid === "string") {
+            this.netSsid = net.staSsid;
+            this.netPassword = typeof net.staPassword === "string" ? net.staPassword : "";
+            if (this.netSsid && this.status.wifi.mode === "ap") {
+              // Simulates the Wi-Fi hand-off: joins the given network.
+              this.status.wifi = { mode: "sta", ip: "192.168.4.100", connected: true };
+              this.netMode = 1;
+            }
+          }
+          // A real controller replies and then reboots to apply. The simulator
+          // applies instantly — an honest difference we never hide.
+          json(200, { ok: true, rebooting: false });
         });
         return;
       }

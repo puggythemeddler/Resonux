@@ -15,7 +15,9 @@ export type IconName =
   | "monitor"
   | "search"
   | "stripe"
-  | "wifi";
+  | "wifi"
+  | "alert"
+  | "check";
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   home: (
@@ -114,16 +116,30 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="12" cy="19.3" r="0.6" />
     </>
   ),
+  alert: (
+    <>
+      <path d="M12 4 2.8 19h18.4Z" />
+      <path d="M12 10v4M12 16.8v.4" />
+    </>
+  ),
+  check: (
+    <>
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="m8.4 12.4 2.4 2.4 4.8-5" />
+    </>
+  ),
 };
 
 export function Icon({
   name,
   size = 20,
   className,
+  style,
 }: {
   name: IconName;
   size?: number;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <svg
@@ -137,6 +153,7 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      style={style}
     >
       {ICON_PATHS[name]}
     </svg>

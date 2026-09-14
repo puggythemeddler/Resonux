@@ -37,7 +37,7 @@ describe("ControllerRegistry", () => {
     expect(typeof info.latencyMs).toBe("number");
     expect(registry.statusOf("sim-t1")?.device).toBe("Simulator / Demo");
 
-    const snap = registry.snapshot("sim-t1", { theme: "dark", selectedControllerId: "sim-t1", simulatorRunning: true }, true);
+    const snap = registry.snapshot("sim-t1", { theme: "dark", selectedControllerId: "sim-t1", simulatorRunning: true, wizardCompleted: false }, true);
     expect(snap.selected?.status.fps).toBeGreaterThan(0);
     expect(snap.selected?.kind).toBe("simulator");
     expect(onChange.mock.calls.length).toBeGreaterThan(0);
@@ -66,6 +66,27 @@ describe("ControllerRegistry", () => {
     expect(registry.statusOf("sim-t2")).toBeNull();
 
     registry.stop();
+  });
+
+  it("comes back online after a keep-port restart (config-reboot path)", async () => {
+    const mock = new MockController({ id: "sim-t4" });
+    await mock.listen();
+    const registry = new ControllerRegistry({ pollMs: 40, offlineAfterFailures: 1, httpTimeoutMs: 300 });
+    registry.registerSimulator("sim-t4", "Flicker", mock.portNumber);
+
+    await waitFor(() => registry.list().some((c) => c.id === "sim-t4" && c.online));
+    await mock.restart();
+
+    // First it notices the outage…
+    await waitFor(() => registry.list().find((c) => c.id === "sim-t4")?.health === "offline");
+    expect(registry.statusOf("sim-t4")).toBeNull();
+
+    // …then the registry discovers it is answering again on the same address.
+    await waitFor(() => registry.list().find((c) => c.id === "sim-t4")?.online === true);
+    expect(registry.statusOf("sim-t4")).not.toBeNull();
+
+    registry.stop();
+    await mock.close();
   });
 
   it("removes a simulator and stops reporting it", async () => {

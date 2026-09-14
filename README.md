@@ -190,14 +190,16 @@ every screen is demonstrable without hardware. See `docs/DESKTOP.md`.
 cd desktop
 npm install
 npm run typecheck               # tsc (main + renderer)
-npm test                        # vitest — 14 host tests, no hardware
+npm test                        # vitest — 21 host tests, no hardware
 npm run build                   # tsc main + vite renderer
 npm start                       # build + launch the Control Center
 ```
 
 On first run the app auto-starts its bundled simulator (clearly labelled
-*Simulator*) so Home, Setup and the discovery flow work immediately; select a
-real controller from the Setup screen when one is on the network.
+*Simulator*) so Home, Setup and the discovery flow work immediately; a
+**first-run setup guide** walks you through finding your controller, verifying
+it, renaming it and handing it your Wi-Fi — with a byte-exact config backup
+before any change and honest, plain-language errors throughout.
 
 First run creates **AP-mode** defaults (`Resonux` hotspot, no password). Join
 it from a phone/PC and browse to `http://192.168.4.1/` for the dashboard, or
@@ -307,8 +309,9 @@ bass/mid/treble, beat, free heap).
 - `cd web && npm run dev` — dashboard **simulator** (mock `/api` endpoints,
   no hardware required).
 - `cd desktop && npm test` — **Control Center host tests** (RESO_DISCOVER
-  codec, simulator REST parity, registry health/offline rules, AppCore boot →
-  simulator → live-command round-trip — 14 tests).
+  codec, simulator REST parity + config writes/AP hand-off, registry
+  health/offline/heal rules, AppCore boot → simulator → live commands + first-run
+  wizard lifecycle — 21 tests).
 - `python tools/companion/resonux_companion.py --once --sim` — send simulated
   SceneFrames over the LAN with zero third-party dependencies
   (`docs/CINEMATIC.md`).
