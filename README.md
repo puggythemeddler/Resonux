@@ -184,13 +184,16 @@ no terminal, no JSON. It reuses the platform rather than duplicating it —
 REST against the same `WebUi` the dashboard uses, `RESO_DISCOVER` multicast
 discovery (a byte-compatible port of the firmware codec), and an honest
 **simulator** (`MockController`) that serves the identical REST surface, so
-every screen is demonstrable without hardware. See `docs/DESKTOP.md`.
+every screen is demonstrable without hardware — plus a **guided hardware
+check** (Diagnostics) that verifies reachability, health, configured strips,
+a live audio signal and a brightness round-trip with a visible blip, then
+asks the user to confirm the LEDs actually lit up. See `docs/DESKTOP.md`.
 
 ```bash
 cd desktop
 npm install
 npm run typecheck               # tsc (main + renderer)
-npm test                        # vitest — 34 host tests, no hardware
+npm test                        # vitest — 40 host tests, no hardware
 npm run build                   # tsc main + vite renderer
 npm start                       # build + launch the Control Center
 npm run dist                    # package a Windows installer (release/)
@@ -327,7 +330,7 @@ bass/mid/treble, beat, free heap).
   codec, simulator REST parity + config writes/AP hand-off + themes/effect/
   audio/cinematic-test surface, registry health/offline/heal rules, AppCore
   boot → simulator → live commands + first-run wizard lifecycle + D3 control
-  surface — 34 tests).
+  surface + the guided hardware check engine — 40 tests).
 - `python tools/companion/resonux_companion.py --once --sim` — send simulated
   SceneFrames over the LAN with zero third-party dependencies
   (`docs/CINEMATIC.md`).

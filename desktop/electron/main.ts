@@ -95,6 +95,7 @@ function registerIpc(): void {
     core?.setAutoSelect(id, Boolean(autoSelect))
   );
   ipcMain.handle("device:triggerCinematicTest", (_e, id: string) => core?.triggerCinematicTest(id));
+  ipcMain.handle("device:runHardwareCheck", (_e, id: string) => core?.runHardwareCheck(id));
 }
 
 app.whenReady().then(() => {

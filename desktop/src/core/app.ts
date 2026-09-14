@@ -19,9 +19,11 @@ import type {
   ThemesPayload,
   ThemeMode,
   ConfigCommandResult,
+  HardwareCheckReport,
 } from "../domain/bridge";
-import type { ConfigPayload, StatePayload } from "../domain/types";
+import type { ConfigPayload, FrameSample, StatePayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
+import { runHardwareCheck, type CheckCalls } from "../diagnostics/check";
 
 type Listener = () => void;
 
@@ -285,6 +287,12 @@ export class AppCore {
     return get<StatePayload>(ep, "/api/state");
   }
 
+  async getFrame(id: string): Promise<FrameSample> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    return get<FrameSample>(ep, "/api/frame");
+  }
+
   async getThemes(id: string): Promise<ThemesPayload> {
     const ep = this.endpointFor(id);
     if (!ep) throw new HttpError(404, "unknown controller", id);
@@ -325,5 +333,27 @@ export class AppCore {
     const ep = this.endpointFor(id);
     // Empty body: the firmware fills in defaults for the QA burst.
     return this.okCommand(ep, "/api/cinematic/test", {});
+  }
+
+  // ------------------------------------------------------ D4: hardware check
+
+  async runHardwareCheck(id: string): Promise<HardwareCheckReport> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    const info = this.registry.list().find((c) => c.id === id);
+    const calls: CheckCalls = {
+      fetchStatus: () => get<StatusSnapshot>(ep, "/api/status"),
+      fetchFrame: () => get<FrameSample>(ep, "/api/frame"),
+      fetchState: () => get<StatePayload>(ep, "/api/state"),
+      setBrightness: (value) => this.okCommand(ep, "/api/state/brightness", { value }),
+    };
+    return runHardwareCheck(
+      {
+        id,
+        name: info?.name ?? id,
+        isSimulator: info?.kind === "simulator",
+      },
+      calls
+    );
   }
 }

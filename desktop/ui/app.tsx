@@ -5,6 +5,7 @@ import { HealthChip, SimulatorChip } from "./components";
 import { Home } from "./areas/Home";
 import { Setup } from "./areas/Setup";
 import { ComingSoon } from "./areas/ComingSoon";
+import { Diagnostics } from "./areas/Diagnostics";
 import { Wizard } from "./areas/Wizard";
 import { Lights } from "./areas/Lights";
 import { Music } from "./areas/Music";
@@ -156,6 +157,8 @@ export default function App() {
             <Themes snapshot={snapshot} />
           ) : area === "cinematic" ? (
             <Cinematic snapshot={snapshot} />
+          ) : area === "diagnostics" ? (
+            <Diagnostics snapshot={snapshot} />
           ) : (
             <ComingSoon area={area} />
           )}

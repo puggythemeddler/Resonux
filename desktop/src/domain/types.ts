@@ -75,6 +75,29 @@ export interface StatePayload {
   themeCount: number;
 }
 
+// Guided Hardware Check (D4): outcome of one step. "warn" means the controller
+// answered but the evidence is weak (e.g. no sound detected); "fail" means a
+// hard problem. The app never throws on a failed check — it reports honestly.
+export type CheckVerdict = "pass" | "warn" | "fail";
+
+export interface CheckStepResult {
+  id: "reachability" | "rail" | "leds" | "audio" | "write";
+  label: string;
+  detail: string;
+  verdict: CheckVerdict;
+}
+
+export interface HardwareCheckReport {
+  targetId: string;
+  targetName: string;
+  isSimulator: boolean;
+  steps: CheckStepResult[];
+  summary: { pass: number; warn: number; fail: number };
+  /** What the brightness "blip" did, so the UI can phrase the human's visual check. */
+  visual: { from: number; to: number } | null;
+  note: string;
+}
+
 export interface CinematicConfigWire {
   enabled: boolean;
   mode: number;

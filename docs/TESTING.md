@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 34 tests across 4 suites (no hardware, no
+`cd desktop && npm test` runs 40 tests across 5 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -76,6 +76,13 @@ network peers):
   simulator: `getState`, `getThemes`, `selectTheme` (global + per-strip),
   `setStripEffect`, `selectAudioSource`, `setAutoSelect`, and
   `triggerCinematicTest`.
+- `check.test` — the **guided hardware check engine** (D4): `blipTarget` never
+  picks 0 and never blasts full brightness; a healthy, live controller
+  (varying amp) passes every step and restores brightness; an unanswerable
+  controller fails fast; a flat audio signal and a brightness write that
+  won't return home are honest **warns** rather than failures; and the full
+  `AppCore.runHardwareCheck` passes every step against the in-process
+  simulator while explicitly labelling it *Simulator*.
 
 Command parity is the contract: the simulator is deliberately kept in lockstep
 with the firmware REST surface so a desktop surface that works in tests works

@@ -2,7 +2,7 @@
 // renderer talks only to this surface through contextBridge — structured
 // data, no Node APIs, no closures.
 
-import type { StatusSnapshot, CinematicPayload, DevicesPayload, AudioSourcesPayload, ThemesPayload, StatePayload, AudioSourceOption, ThemeDefWire } from "./types";
+import type { StatusSnapshot, CinematicPayload, DevicesPayload, AudioSourcesPayload, ThemesPayload, StatePayload, AudioSourceOption, ThemeDefWire, HardwareCheckReport, CheckStepResult, CheckVerdict } from "./types";
 
 export type {
   StatusSnapshot,
@@ -13,6 +13,9 @@ export type {
   StatePayload,
   AudioSourceOption,
   ThemeDefWire,
+  HardwareCheckReport,
+  CheckStepResult,
+  CheckVerdict,
 };
 
 export type ThemeMode = "system" | "dark" | "light";
@@ -101,5 +104,7 @@ export interface ResonuxApi {
   selectAudioSource(id: string, source: number): Promise<boolean>;
   setAutoSelect(id: string, autoSelect: boolean): Promise<boolean>;
   triggerCinematicTest(id: string): Promise<boolean>;
+  /** D4: run the guided hardware check against a controller's existing REST surface. */
+  runHardwareCheck(id: string): Promise<HardwareCheckReport>;
   onChanged(cb: (snapshot: Snapshot) => void): () => void;
 }

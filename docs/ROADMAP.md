@@ -34,8 +34,8 @@ updated in the same commit.
 |---|---|---|
 | **D1** | Architecture, framework choice (Electron), client layer (REST + UDP discovery), honest simulator, app shell with Home + Setup, IPC contract, smoke boot | **in repo, builds + 14 host tests green, smoke boot verified** |
 | **D2** | First-run setup wizard (highest priority): guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
-| **D3** | Main Control Center: Lights (by name, per strip), Music (plain-language sources + auto-select), Themes (swatches, global + per strip), Cinematic (engine toggle, scene readout, QA bursts) | **in repo, builds + 34 host tests green, smoke verified** |
-| **D4** | Diagnostics + system controls: health, logs, export-amended reports (no secrets), restart/power-off behind confirms | planned |
+| **D3** | Main Control Center: Lights (by name, per strip), Music (plain-language sources + auto-select), Themes (swatches, global + per strip), Cinematic (engine toggle, scene readout, QA bursts) | **in repo, builds + 40 host tests green, smoke verified** |
+| **D4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step: reachability, health, configured strips, live audio signal, brightness write round-trip with a visible blip, then a human confirm), health; logs, export-amended reports (no secrets), restart/power-off behind confirms still planned | **guided hardware check in repo, builds + 40 host tests green; logs/export/restart/power-off pending** |
 | **D5** | Firmware & recovery: `/api/ota` update, backup/restore, esptool flash recovery | planned |
 | **D6** | Polish + installer: electron-builder NSIS installer (single-file, one-click, desktop shortcut), full **brand identity + logo system** (`docs/BRAND.md`, `desktop/build/`) | **installer + logo system in repo; auto-update, tray, UX audit pending** |
 

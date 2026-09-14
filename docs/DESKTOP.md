@@ -6,10 +6,11 @@ no terminal, no JSON editing, no PlatformIO. Everything the firmware and web
 dashboard already do — discovery, REST control, OTA, cinematic — is consumed,
 not duplicated.
 
-Status: **Phases 1–3 in the repo** (architecture + client layer + discovery +
-simulator + app shell + first-run wizard + the main Control Center surface).
-Buildable and host-tested; cross-checks against real controllers happen at
-bench bring-up (`docs/BENCH.md`).
+Status: **Phases 1–4 in the repo** (architecture + client layer + discovery +
+simulator + app shell + first-run wizard + the main Control Center surface +
+a guided hardware check in Diagnostics). Buildable and host-tested;
+cross-checks against real controllers happen at bench bring-up
+(`docs/BENCH.md`).
 
 ## Why a desktop app at all
 
@@ -213,6 +214,40 @@ The four main areas live in `ui/areas/` and talk to the controller through
 None of them write config or reboot — they are live-state commands,
 mirroring the firmware endpoints' own behaviour.
 
+## Diagnostics & guided hardware check (Phase 4)
+
+`ui/areas/Diagnostics.tsx` replaced the placeholder under Diagnostics. A
+**guided hardware check** (`src/diagnostics/check.ts`) walks a non-technical
+user through a live, honest, step-by-step verification of their controller —
+engine and UI are host-side; it drives only existing firmware REST endpoints,
+so nothing firmware-side changed:
+
+1. **Reachability** — `GET /api/status` answers; the controller is online.
+2. **Controller health** — `ok`, heap above the floor, uptime sane.
+3. **Strips configured** — the rig actually has LEDs to check.
+4. **Audio is alive** — `AUDIO_SAMPLES` samples of `GET /api/frame` are
+   compared; a varying signal passes, a flat one is a *warn* ("is music
+   playing?") rather than a failure — the controller may be fine while the
+   music is paused.
+5. **Brightness write round-trip** — the app blips the LEDs to a visibly
+   brighter level (~900 ms hold), reads the controller back to confirm it took
+   the value, then restores. Restore failure is a *warn* (the LEDs are likely
+   fine, but something isn't persisting), never a hard fail.
+6. **Your turn** — the computer cannot see light. The app hands control to
+   the user: *Did the room light up?* Yes/No turns the whole run's verdict.
+
+Each step renders as check/pass/warn/fail with a sentence of plain-language
+explanation; the battery runs non-destructively (restores state), targets the
+selected controller, and lists an honest overall verdict plus which steps need
+attention. The simulator is supported end-to-end and is labelled *Simulator*
+in the report, never presented as real hardware. Details and thresholds live
+in `src/diagnostics/check.ts`; the busiest real pacing is brief (sub-second
+audio spacing with a ~0.9 s blip).
+
+Still planned under this phase: log views, structured report export (no
+secrets), and restart/power-off behind confirms (`POST /api/system/restart`,
+`/power-off`).
+
 ## Config writes & first-run (Phase 2)
 
 The wizard (`ui/areas/Wizard.tsx`) is a full-screen, modal guide:
@@ -256,8 +291,9 @@ by default.
 | `src/sim/mock.test.ts` (14) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; restart on the same port keeping state; **D3**: themes payload/select-global+per-strip/PUT+DELETE/reset, per-strip effect with validation, audio source + auto-select, cinematic test burst |
 | `src/client/registry.test.ts` (4) | simulator health → online; going offline clears stale status (identity survives); offline→heal after a restart; removal |
 | `src/core/app.test.ts` (11) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline`; **D3**: getState/getThemes/selectTheme (global + per-strip)/setStripEffect/selectAudioSource/setAutoSelect/triggerCinematicTest |
+| `src/diagnostics/check.test.ts` (6) | **D4**: `blipTarget` bounds; healthy live controller passes every step + restores brightness; unanswerable controller fails fast; flat audio and a write that won't restore are honest *warns*; full `runHardwareCheck` against the in-process simulator passes and labels itself *Simulator* |
 
-**34 host tests** across the four suites, plus the firmware gate
+**40 host tests** across the five suites, plus the firmware gate
 (`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
@@ -313,8 +349,8 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
 |---|---|---|
 | **1** | Architecture + client layer + discovery + simulator + app shell (Home/Setup) | **in repo, builds + 14 host tests green** |
 | **2** | First-run setup wizard: guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
-| **3** | Main Control Center: Lights (per strip, by name), Music (sources, plain language), Themes (swatches, global + per-strip), Cinematic basics (engine toggle + scene readout + QA test bursts) | **in repo, builds + 34 host tests green, smoke verified** |
-| **4** | Diagnostics: health, logs, structured reports (no secrets), restart/power-off with confirms | planned |
+| **3** | Main Control Center: Lights (per strip, by name), Music (sources, plain language), Themes (swatches, global + per-strip), Cinematic basics (engine toggle + scene readout + QA test bursts) | **in repo, builds + 40 host tests green, smoke verified** |
+| **4** | Diagnostics: guided hardware check (live, honest step-by-step), health; logs, structured report export (no secrets), restart/power-off with confirms still planned | **guided hardware check in repo, builds + 40 host tests green; logs/export/restart/power-off pending** |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
 | **6** | Firmware & recovery: OTA update, backup/restore, flash recovery via bundled esptool | planned |
 | **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | **installer in repo (NSIS, one-click, single-file exe); auto-update/tray/UX audit pending** |
