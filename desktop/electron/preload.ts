@@ -41,6 +41,8 @@ const api: ResonuxApi = {
   updateFirmware: (id: string) => ipcRenderer.invoke("device:updateFirmware", id),
   backupConfig: (id: string) => ipcRenderer.invoke("device:backupConfig", id),
   restoreConfig: (id: string) => ipcRenderer.invoke("device:restoreConfig", id),
+  checkForUpdates: () => ipcRenderer.invoke("app:checkUpdates"),
+  openExternal: (url: string) => ipcRenderer.invoke("app:openExternal", url),
   onChanged: (cb: (snapshot: Snapshot) => void) => {
     const listener = (_event: unknown, snapshot: Snapshot) => cb(snapshot);
     ipcRenderer.on("app:changed", listener);

@@ -10,6 +10,7 @@ import path from "node:path";
 import { SettingsStore } from "./settings";
 import { LogStore, type LogLevel } from "../log/log";
 import { buildReport, suggestedReportName } from "./report";
+import { fetchLatestRelease, compareVersions } from "./update";
 import type {
   AppInfo,
   AppSettings,
@@ -25,6 +26,7 @@ import type {
   SystemCommandResult,
   UpdateFirmwareResult,
   ConfigRestoreResult,
+  CheckUpdatesResult,
 } from "../domain/bridge";
 import type { ConfigPayload, FrameSample, StatePayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
@@ -533,6 +535,43 @@ export class AppCore {
     } catch (err) {
       this.log("warn", "config", "Config restore failed", label);
       return { ok: false, rebootApplied: false, detail: describeError(err) };
+    }
+  }
+
+  // ------------------------------------------------ D6: update check + info
+
+  // Read-only check against the GitHub releases API. The app never downloads
+  // or installs anything here — an unsigned build is honest about that and
+  // only tells the user which release is newer, with a link to fetch it.
+  async checkForUpdates(): Promise<CheckUpdatesResult> {
+    const current = this.appInfo.version;
+    try {
+      const release = await fetchLatestRelease("puggythemeddler/Resonux");
+      const latest = release.tag_name.replace(/^v/i, "");
+      const available = compareVersions(latest, current) > 0;
+      this.log(
+        available ? "info" : "info",
+        "update",
+        available
+          ? `A newer release is available: ${release.tag_name}`
+          : "No newer release available",
+      );
+      return {
+        ok: true,
+        current,
+        latest,
+        available,
+        url: release.html_url,
+      };
+    } catch (err) {
+      this.log("warn", "update", "Update check failed (offline or no release yet)");
+      return {
+        ok: false,
+        current,
+        latest: current,
+        available: false,
+        detail: describeError(err),
+      };
     }
   }
 }

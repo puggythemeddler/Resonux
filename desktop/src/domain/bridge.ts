@@ -117,6 +117,16 @@ export interface ConfigRestoreResult {
   detail?: string;
 }
 
+/** Outcome of a GitHub-releases update check. */
+export interface CheckUpdatesResult {
+  ok: boolean;
+  current: string;
+  latest: string;
+  available: boolean;
+  url?: string;
+  detail?: string;
+}
+
 export interface ResonuxApi {
   getInfo(): Promise<AppInfo>;
   getSnapshot(): Promise<Snapshot>;
@@ -159,5 +169,10 @@ export interface ResonuxApi {
   backupConfig(id: string): Promise<ConfigBackupResult>;
   /** Pick a saved config .json in the main process and PUT it to the controller. */
   restoreConfig(id: string): Promise<ConfigRestoreResult>;
+  // ---- D6: updates + system ----
+  /** Compare the app version against the newest GitHub release (read-only). */
+  checkForUpdates(): Promise<CheckUpdatesResult>;
+  /** Open a URL in the user's default browser (used for release pages). */
+  openExternal(url: string): Promise<void>;
   onChanged(cb: (snapshot: Snapshot) => void): () => void;
 }

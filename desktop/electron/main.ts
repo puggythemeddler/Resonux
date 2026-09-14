@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { AppCore } from "../src/core/app";
@@ -7,6 +7,48 @@ import type { HardwareCheckReport } from "../src/domain/bridge";
 
 let core: AppCore | null = null;
 let win: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+function trayIcon(): Electron.NativeImage {
+  // Dev: desktop/build/icon.ico … packaged: <app.asar>/build/icon.ico (shipped
+  // via electron-builder files). Falls back to an empty image so the tray
+  // never crashes a dev build missing the icon.
+  const iconPath = path.join(__dirname, "..", "..", "..", "build", "icon.ico");
+  const img = nativeImage.createFromPath(iconPath);
+  return img.isEmpty()
+    ? nativeImage.createFromDataURL("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+    : img.resize({ width: 16, height: 16 });
+}
+
+function showWindow(): void {
+  if (!win || win.isDestroyed()) {
+    void createWindow();
+  } else {
+    win.show();
+    win.focus();
+  }
+}
+
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(trayIcon());
+  tray.setToolTip("Resonux Control Center");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Control Center", click: showWindow },
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ])
+  );
+  tray.on("double-click", showWindow);
+}
 
 function createWindow(): void {
   const smoke = Boolean(process.env.RESONUX_SMOKE);
@@ -31,6 +73,14 @@ function createWindow(): void {
   });
   win.on("closed", () => {
     win = null;
+  });
+  // Close-to-tray: the X hides the window; the tray remains for showing it
+  // again or quitting. Explicit 'Quit' sets isQuitting so close is real.
+  win.on("close", (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      win?.hide();
+    }
   });
 
   if (smoke) {
@@ -184,6 +234,11 @@ function registerIpc(): void {
       return { ok: false, rebootApplied: false, detail: err instanceof Error ? err.message : String(err) };
     }
   });
+  // ---- D6: updates + system ----
+  ipcMain.handle("app:checkUpdates", () => core?.checkForUpdates());
+  ipcMain.handle("app:openExternal", async (_e, url: string) => {
+    await shell.openExternal(url);
+  });
 }
 
 app.whenReady().then(() => {
@@ -199,6 +254,7 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
+  createTray();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -206,7 +262,8 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  // With the tray there is deliberately no auto-quit: the app parks in the
+  // tray and only exits via the tray's Quit item (which sets isQuitting).
 });
 
 app.on("will-quit", () => {

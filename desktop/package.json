@@ -26,6 +26,7 @@
     },
     "files": [
       "dist/**/*",
+      "build/icon.ico",
       "package.json"
     ],
     "win": {

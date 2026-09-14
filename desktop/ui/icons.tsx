@@ -19,7 +19,8 @@ export type IconName =
   | "check"
   | "power"
   | "save"
-  | "upload";
+  | "upload"
+  | "external";
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   home: (
@@ -141,6 +142,13 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M12 17V4M7 9l5-5 5 5" />
       <path d="M4 20h16" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" />
     </>
   ),
 };

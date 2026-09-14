@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type {
   Snapshot,
   UpdateFirmwareResult,
   ConfigBackupResult,
   ConfigRestoreResult,
+  CheckUpdatesResult,
 } from "../../src/domain/bridge";
 import { Card, Button, HealthChip, KindChip, ErrorDetail, ConfirmDialog } from "../components";
+import { Icon } from "../icons";
 
 interface SettingsProps {
   snapshot: Snapshot;
@@ -30,7 +32,33 @@ export function Settings({ snapshot }: SettingsProps) {
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreOutcome | null>(null);
 
+  const [appVersion, setAppVersion] = useState<string>("");
+  useEffect(() => {
+    let alive = true;
+    void window.resonux.getInfo().then((i) => {
+      if (alive) setAppVersion(i.version);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const [checking, setChecking] = useState(false);
+  const [updateResult, setUpdateResult] = useState<CheckUpdatesResult | null>(null);
+
   const err = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  const doCheckUpdates = async () => {
+    setChecking(true);
+    setUpdateResult(null);
+    try {
+      setUpdateResult(await window.resonux.checkForUpdates());
+    } catch (e) {
+      setUpdateResult({ ok: false, current: appVersion, latest: "", available: false, detail: err(e) });
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const doUpdate = async () => {
     if (!targetId) return;
@@ -225,6 +253,49 @@ export function Settings({ snapshot }: SettingsProps) {
           onConfirm={() => void doRestore()}
           onCancel={() => setRestoreConfirm(false)}
         />
+      </Card>
+
+      <Card
+        title="5 · About & updates"
+        hint="Compares this build against the newest published release. The app never installs anything silently — when a newer build exists it links you to it."
+      >
+        <div className="row">
+          <span className="sub grow" style={{ marginTop: 0 }}>
+            <Icon name="chip" size={14} /> Resonux Control Center
+            <b> {appVersion || "…"}</b>
+          </span>
+          <Button variant="ghost" icon="search" onClick={() => void doCheckUpdates()} disabled={checking}>
+            {checking ? "Checking…" : "Check for updates"}
+          </Button>
+        </div>
+
+        {updateResult?.ok && updateResult.available && (
+          <div className="row" style={{ marginTop: "var(--space-3)", justifyContent: "flex-start" }}>
+            <span className="sub grow" style={{ marginTop: 0 }}>
+              A newer build is available: <b>{updateResult.latest}</b> (you have {updateResult.current}).
+            </span>
+            {updateResult.url && (
+              <Button icon="external" onClick={() => void window.resonux.openExternal(updateResult.url!)}>
+                See release
+              </Button>
+            )}
+          </div>
+        )}
+        {updateResult?.ok && !updateResult.available && (
+          <p className="hint" style={{ marginTop: "var(--space-3)" }}>
+            You&apos;re on {updateResult.current} — no newer release found.
+          </p>
+        )}
+        {updateResult && !updateResult.ok && (
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <ErrorDetail
+              what="The update check didn't work."
+              hint="Check your internet connection, then try again."
+              detail={updateResult.detail}
+              onRetry={() => void doCheckUpdates()}
+            />
+          </div>
+        )}
       </Card>
     </>
   );

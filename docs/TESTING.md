@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 59 tests across 7 suites (no hardware, no
+`cd desktop && npm test` runs 66 tests across 8 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -103,6 +103,12 @@ network peers):
   won't return home are honest **warns** rather than failures; and the full
   `AppCore.runHardwareCheck` passes every step against the in-process
   simulator while explicitly labelling it *Simulator*.
+- `update.test` — the **D6 update check** (`update.ts`): `compareVersions`
+  sorts equal versions (incl. a `v` prefix and missing trailing components) and
+  bumps in major/minor/patch order, while trailing suffix segments never push a
+  `-beta`/`-rc` tag above its plain release; `fetchLatestRelease` parses the
+  GitHub Releases API shape and fails honestly on both HTTP errors and
+  non-release payloads (injected fake `fetch`, no network).
 
 Command parity is the contract: the simulator is deliberately kept in lockstep
 with the firmware REST surface so a desktop surface that works in tests works

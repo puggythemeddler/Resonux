@@ -330,8 +330,9 @@ their outcome to the session event stream:
 | `src/log/log.test.ts` (3) | **D4**: ordering/seq + ISO timestamps; cap at configured size (drops oldest); returned entries are copies (no internal mutation) |
 | `src/core/report.test.ts` (4) | **D4**: serialises app/controller/check/log into JSON; excludes addresses, ports, Wi-Fi credentials, and passwords; null check serialises honestly; `suggestedReportName` sanitises the controller name |
 | `src/diagnostics/check.test.ts` (6) | **D4**: `blipTarget` bounds; healthy live controller passes every step + restores brightness; unanswerable controller fails fast; flat audio and a write that won't restore are honest *warns*; full `runHardwareCheck` against the in-process simulator passes and labels itself *Simulator* |
+| `src/core/update.test.ts` (7) | **D7**: `compareVersions` — equal versions, v-prefix tolerance, major/minor/patch ordering, missing-components-equal-zero, trailing-digit suffixes; `fetchLatestRelease` — happy path parses tag + url, HTTP 404 fails honestly, non-release payload fails honestly |
 
-**59 host tests** across the seven suites, plus the firmware gate
+**66 host tests** across the eight suites, plus the firmware gate
 (`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
@@ -368,7 +369,8 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
   (`"nsis": { "oneClick": true }` in `package.json`). No Node, no PlatformIO,
   no toolchain needed on the target machine.
 - `electron-builder` only ships what the app needs: `dist/**` (compiled main +
-  renderer) and `package.json`, into an asar. No source, no tests.
+  renderer) plus `build/icon.ico` (for the system tray), and `package.json`,
+  into an asar. No source, no tests.
 - The app is **branded** with the *Luminous Node at Resonance* identity (see
   `docs/BRAND.md`): `build/icon.ico` (multi-size, 16–256 PNG entries) is
   embedded in the exe and installer, and the renderer shows the same mark —
@@ -377,9 +379,16 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
   Source of truth is `build/logo.svg` + the generator; regenerate the full
   pixel/vector set (icon, ICO, mark, wordmark, lockups, favicon) with
   `powershell -File build\make-icon.ps1` from the `desktop/` directory.
-- Auto-update, digital signing, and the tray are deliberately **not** enabled
-  yet; the release is unsigned (Windows SmartScreen shows the *"run anyway"*
-  prompt), which is fine for a dev/early-access build.
+- A native **system tray** icon keeps the Control Center alive in the
+  background: the window hides to the tray on close; the tray menu offers
+  *Open Control Center* and *Quit*. The app never quits automatically — it
+  sits in the tray until the user explicitly tells it to leave.
+- The release is unsigned (Windows SmartScreen shows the *"run anyway"*
+  prompt), which is fine for a dev/early-access build. Silent auto-update is
+  deliberately not enabled: unsigned code must not pretend to install itself.
+  Instead, Settings includes a read-only *Check for updates* card that
+  queries the GitHub Releases API and links the user to the newest published
+  build when one exists.
 
 ## Phase plan
 
@@ -391,7 +400,7 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
 | **4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step), health; session event log (in-memory, secret-free), structured report export (no secrets/addresses), restart/power-off behind confirms | **in repo, builds + 53 host tests green** |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
 | **6** | Firmware & recovery: OTA update (via the firmware's `/api/ota`), config backup/restore (byte-exact, confirms), flash recovery via bundled esptool | **OTA + backup/restore in repo, builds + 59 host tests green; esptool serial flash recovery pending (needs a bundled serial toolchain)** |
-| **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | **installer in repo (NSIS, one-click, single-file exe); auto-update/tray/UX audit pending** |
+| **7** | Polish: installer (electron-builder), close-to-tray system tray, read-only GitHub-releases update check in Settings, UX audit vs `.impeccable` review standards | **installer + tray + update check in repo, builds + 66 host tests green; silent auto-update pending (unsigned build); UX audit pending** |
 
 Rules for the plan: every phase changes README + the docs that describe it in
 the same commit; destructive capabilities (restore, reset, flash) get explicit
