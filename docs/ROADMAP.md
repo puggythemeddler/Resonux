@@ -22,6 +22,27 @@ repo; a phase is *done* when its acceptance criteria pass on hardware.
 | **12** | Universal device detection & insights | capability registry + RESO_DISCOVER codec (`DiscoverProtocol.h`), tri-layer confidence + integration hints (`DeviceInsight.h`), `capCatalog`/`connCatalog`, manual identify (`declare()`), audio-source availability derived from trusted devices + boot `active`/`reason`, Devices & Sources tab (Details/manual forms) with mock parity | 84 host tests green; native + esp32-s3 + esp32-s3-ui + web builds green; detection never drives outputs; re-scan cannot downgrade a trusted row | **implemented, builds green, bench pending** |
 | **13** | Cinematic Mode (movie/TV scene-reactive lighting) | pure `SceneAnalyzer`/`CinematicEngine`/`SceneFrame` codec + `cinema/` headers, 5 reaction presets + 2 genre overlays, **bounded scene-memory ring + 8-mood intent director** (friendly labels), **optional spatial `SceneFrame` block + wave-propagation room mapping** (`SpatialBlock.h`/`SpatialWaveField.h`, per-strip `roomX/roomY`, wave knobs), **multi-source companion picker with skew estimate**, **comfort tiers + audio/video sync offset + link-latency/jitter status**, **test/demo injector + QA bursts** (`/api/cinematic/test`, web QA card, touchscreen QA button, looping demo script), **debounced config flash-save**, `SceneLinkNode` UDP-multicast companion receiver, engine→theme applier, `/api/cinematic` GET/POST, Cinematic web tab + LVGL Cine screen, Python reference companion (`tools/companion/`) | 144 host tests green; native + esp32-s3 + esp32-s3-ui + web typecheck/build green; companion feed never drives outputs directly (engine → theme → LEDDriver only); silent companion falls back to on-device audio; sustained loud noise never strobes; mapping off ⇒ prior behavior byte-for-byte | **implemented, builds green, bench pending** |
 
+## Windows Control Center (desktop app)
+
+Separate lane for the Windows desktop application built on top of the
+firmware platform (`docs/DESKTOP.md` for architecture + framework decision).
+Phases below are D-phases (desktop); they do not block or unblock firmware
+phases. Definition-of-done per phase: code + host tests green + README/docs
+updated in the same commit.
+
+| Phase | Scope | Status |
+|---|---|---|
+| **D1** | Architecture, framework choice (Electron), client layer (REST + UDP discovery), honest simulator, app shell with Home + Setup, IPC contract, smoke boot | **in repo, builds + 14 host tests green, smoke boot verified** |
+| **D2** | First-run setup wizard (highest priority): guided connect, verify, rename, Wi-Fi hand-off, honest errors | planned |
+| **D3** | Main Control Center: Lights (by name), Music (plain-language sources), Themes (swatches), Cinematic (QA bursts) | planned |
+| **D4** | Diagnostics + system controls: health, logs, export-amended reports (no secrets), restart/power-off behind confirms | planned |
+| **D5** | Firmware & recovery: `/api/ota` update, backup/restore, esptool flash recovery | planned |
+| **D6** | Polish + installer: electron-builder, auto-update, tray, UX audit vs `.impeccable` standards | planned |
+
+Hardware bench remains the single blocker for every firmware phase marked
+"bench pending" (`docs/BENCH.md`); the desktop lane is host-only until then
+and is verified against the in-process simulator + smoke boot.
+
 ## Near-term plan (after architecture sign-off)
 
 1. Phase-1 bench bring-up: build firmware → flash S3 → serial VU/band stats →

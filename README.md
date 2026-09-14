@@ -19,6 +19,7 @@ over Art-Net.
 | **C++ (C++17)** | ESP32-S3 firmware — PlatformIO + Arduino-ESP32 core 2.0.x |
 | **Python 3** | dev tooling: audio-analysis lab, PSU/wire sizing |
 | **HTML / CSS / TypeScript** | web dashboard (Vite + React, implemented) |
+| **TypeScript (React) + Electron** | Windows Control Center desktop app (`desktop/`) |
 
 Key libraries: **FastLED** (LED output), **arduinoFFT** (DSP), **ArduinoJson**
 (config).
@@ -103,9 +104,10 @@ See `docs/ARCHITECTURE.md` for the full design.
 ## Repo layout
 
 ```
-/docs         architecture, hardware/electrical + BOM, web, testing, roadmap
+/docs         architecture, hardware/electrical + BOM, web, desktop, testing, roadmap
 /firmware      ESP32-S3 firmware (PlatformIO, C++/Arduino) — Phase 1
 /web          web dashboard (Vite + React + TypeScript) — Phase 4
+/desktop      Windows Control Center (Electron + React + TypeScript) — Phase D
 /tools/python  audio-analysis lab + power calculator (dev tooling)
 /tools/companion  cinematic reference companion (Python, optional deps)
 ```
@@ -173,6 +175,29 @@ Run the dashboard **without hardware** (mock `*/api` server):
 cd web
 npm run dev                      # http://localhost:5173 — simulated device
 ```
+
+### Control Center (Windows desktop app)
+
+The Resonux Control Center is a desktop application (Electron + React +
+TypeScript) built for **non-technical users**: guided setup, plain language,
+no terminal, no JSON. It reuses the platform rather than duplicating it —
+REST against the same `WebUi` the dashboard uses, `RESO_DISCOVER` multicast
+discovery (a byte-compatible port of the firmware codec), and an honest
+**simulator** (`MockController`) that serves the identical REST surface, so
+every screen is demonstrable without hardware. See `docs/DESKTOP.md`.
+
+```bash
+cd desktop
+npm install
+npm run typecheck               # tsc (main + renderer)
+npm test                        # vitest — 14 host tests, no hardware
+npm run build                   # tsc main + vite renderer
+npm start                       # build + launch the Control Center
+```
+
+On first run the app auto-starts its bundled simulator (clearly labelled
+*Simulator*) so Home, Setup and the discovery flow work immediately; select a
+real controller from the Setup screen when one is on the network.
 
 First run creates **AP-mode** defaults (`Resonux` hotspot, no password). Join
 it from a phone/PC and browse to `http://192.168.4.1/` for the dashboard, or
@@ -281,6 +306,9 @@ bass/mid/treble, beat, free heap).
   (`docs/HARDWARE.md §4`).
 - `cd web && npm run dev` — dashboard **simulator** (mock `/api` endpoints,
   no hardware required).
+- `cd desktop && npm test` — **Control Center host tests** (RESO_DISCOVER
+  codec, simulator REST parity, registry health/offline rules, AppCore boot →
+  simulator → live-command round-trip — 14 tests).
 - `python tools/companion/resonux_companion.py --once --sim` — send simulated
   SceneFrames over the LAN with zero third-party dependencies
   (`docs/CINEMATIC.md`).
@@ -293,6 +321,8 @@ bass/mid/treble, beat, free heap).
 - `docs/BOM.md` — bill of materials (Phase 2)
 - `docs/TESTING.md` — test strategy & tools
 - `docs/WEB_DASHBOARD.md` — Phase 4 dashboard spec
+- `docs/DESKTOP.md` — Windows Control Center: architecture, framework choice,
+  client layer, simulator, phase plan
 - `docs/TOUCHSCREEN.md` — LVGL touchscreen UI (Phase 10)
 - `docs/MULTI_CONTROLLER.md` — multi-controller sync (Phase 9)
 - `docs/PRODUCTISATION.md` — carrier PCB + enclosure + CE (Phase 10)
@@ -325,12 +355,14 @@ unit tests in CI** (144 pass), **cinematic mode** (on-device mic analysis
   wave propagation, cooldown-gated booms and a dead-companion audio-only
   fallback, multi-source companion picker, comfort tiers, audio/video sync
   offset + link-latency status, test/demo injector with QA bursts + looping
-  demo script, debounced config saving; web Cinematic tab + QA card, LVGL Cine
+demo script, debounced config saving; web Cinematic tab + QA card, LVGL Cine
   screen + QA button and live `/api/cinematic` endpoints) and the **LVGL touchscreen UI**
 (hardware-independent display/touch abstraction) are implemented and compile
 cleanly for ESP32-S3 (~41 % RAM / ~59 % flash at the default config, ~65 %
-flash with the touchscreen env); hardware bring-up is pending parts arrival
-(see `docs/HARDWARE.md`).
+flash with the touchscreen env). The **Windows Control Center** desktop app
+(`docs/DESKTOP.md`) is scaffolded and working end-to-end with the in-process
+simulator (discovery, health, Home + Setup, live brightness/cinematic toggles);
+hardware bring-up is pending parts arrival (see `docs/HARDWARE.md`).
 
 ## License / ownership
 

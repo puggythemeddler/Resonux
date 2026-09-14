@@ -1,0 +1,144 @@
+import React from "react";
+
+export type IconName =
+  | "home"
+  | "plug"
+  | "lamp"
+  | "music"
+  | "palette"
+  | "film"
+  | "chip"
+  | "activity"
+  | "gear"
+  | "moon"
+  | "sun"
+  | "monitor"
+  | "search"
+  | "stripe"
+  | "wifi";
+
+const ICON_PATHS: Record<IconName, React.ReactNode> = {
+  home: (
+    <>
+      <path d="M4 11 12 4l8 7" />
+      <path d="M6 10v9h12v-9" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 3v6M15 3v6" />
+      <path d="M6 9h12v3a6 6 0 0 1-12 0Z" />
+      <path d="M12 18v3" />
+    </>
+  ),
+  lamp: (
+    <>
+      <path d="M8 3h8l-1.2 6H9.2Z" />
+      <path d="M12 9v6" />
+      <path d="M9 18h6" />
+    </>
+  ),
+  music: (
+    <>
+      <path d="M8 5v11" />
+      <path d="M8 3v2" />
+      <circle cx="6" cy="17" r="2.4" />
+      <circle cx="14" cy="15" r="2.4" />
+      <path d="M14 15V5l6-1.5V15" />
+    </>
+  ),
+  palette: (
+    <>
+      <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 1.6-2-.4-1 .2-1.6 1-1.6H18a3 3 0 0 0 3-3c0-5-4-11.4-9-11.4" />
+      <circle cx="7.5" cy="10.5" r="1.1" />
+      <circle cx="12" cy="7.5" r="1.1" />
+      <circle cx="16.5" cy="10.5" r="1.1" />
+    </>
+  ),
+  film: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5" />
+    </>
+  ),
+  chip: (
+    <>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <path d="M9 20v-2M9 6V4M15 20v-2M15 6V4M4 9h2M4 15h2M20 9h-2M20 15h-2" />
+    </>
+  ),
+  activity: (
+    <>
+      <path d="M3 12h4l2.5-7 4 14 2.5-7H21" />
+    </>
+  ),
+  gear: (
+    <>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+    </>
+  ),
+  moon: (
+    <>
+      <path d="M20 15.2A8 8 0 0 1 8.8 4a8 8 0 1 0 11.2 11.2Z" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5V5M12 19v2.5M2.5 12H5M19 12h2.5M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19" />
+    </>
+  ),
+  monitor: (
+    <>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-3.8-3.8" />
+    </>
+  ),
+  stripe: (
+    <>
+      <path d="M3 20.5 9 4l4.5 12L18 7l3 13.5" />
+    </>
+  ),
+  wifi: (
+    <>
+      <path d="M4 9.5a11 11 0 0 1 16 0" />
+      <path d="M7 13a7 7 0 0 1 10 0" />
+      <path d="M10 16.5a3 3 0 0 1 4 0" />
+      <circle cx="12" cy="19.3" r="0.6" />
+    </>
+  ),
+};
+
+export function Icon({
+  name,
+  size = 20,
+  className,
+}: {
+  name: IconName;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}

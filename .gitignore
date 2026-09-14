@@ -9,6 +9,11 @@ web/node_modules/
 web/dist/
 web/.vite/
 
+# ---- Node / TypeScript desktop app ----
+desktop/node_modules/
+desktop/dist/
+desktop/.vite/
+
 # ---- Python (companion / dev tools) ----
 __pycache__/
 *.pyc
