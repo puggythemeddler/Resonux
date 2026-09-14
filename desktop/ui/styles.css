@@ -152,10 +152,9 @@ button {
 }
 
 .brand-mark {
-  width: 30px;
-  height: 30px;
+  width: auto;
+  height: auto;
   flex: 0 0 auto;
-  color: var(--accent);
 }
 
 .nav-item {

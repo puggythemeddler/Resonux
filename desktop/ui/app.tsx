@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { AppInfo, Snapshot, ThemeMode } from "../src/domain/bridge";
-import { Icon, type IconName } from "./icons";
+import { Icon, Logo, type IconName } from "./icons";
 import { HealthChip, SimulatorChip } from "./components";
 import { Home } from "./areas/Home";
 import { Setup } from "./areas/Setup";
@@ -87,7 +87,7 @@ export default function App() {
     <div className="shell">
       <aside className="navrail">
         <div className="brand">
-          <Icon name="stripe" className="brand-mark" size={30} />
+          <Logo size={30} className="brand-mark" />
           Resonux
           <span className="sub">Control Center</span>
         </div>

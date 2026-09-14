@@ -14,7 +14,6 @@ export type IconName =
   | "sun"
   | "monitor"
   | "search"
-  | "stripe"
   | "wifi"
   | "alert"
   | "check";
@@ -103,11 +102,6 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <path d="m20 20-3.8-3.8" />
     </>
   ),
-  stripe: (
-    <>
-      <path d="M3 20.5 9 4l4.5 12L18 7l3 13.5" />
-    </>
-  ),
   wifi: (
     <>
       <path d="M4 9.5a11 11 0 0 1 16 0" />
@@ -129,6 +123,51 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
 };
+
+export function Logo({
+  size = 30,
+  className,
+  style,
+}: {
+  size?: number;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const gid = React.useId();
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 256 256"
+      style={style}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffb15c" />
+          <stop offset="1" stopColor="#e8590c" />
+        </linearGradient>
+      </defs>
+      <rect x="8" y="8" width="240" height="240" rx="56" fill={`url(#${gid})`} />
+      <g fill="#2a1406">
+        <rect x="84" y="60" width="28" height="124" rx="12" />
+        <rect x="84" y="60" width="88" height="28" rx="12" />
+        <rect x="148" y="60" width="24" height="80" rx="12" />
+        <line
+          x1="124"
+          y1="162"
+          x2="184"
+          y2="184"
+          stroke="#2a1406"
+          strokeWidth="24"
+          strokeLinecap="round"
+        />
+      </g>
+      <circle cx="211" cy="67" r="13" fill="#ffe9cf" />
+    </svg>
+  );
+}
 
 export function Icon({
   name,

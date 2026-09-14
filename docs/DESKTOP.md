@@ -295,9 +295,11 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
   no toolchain needed on the target machine.
 - `electron-builder` only ships what the app needs: `dist/**` (compiled main +
   renderer) and `package.json`, into an asar. No source, no tests.
-- The packaged app uses the default Electron icon until a branded
-  `build/icon.ico` (256×256) is added — cosmetic only, flagged in the build
-  log as `default Electron icon is used`.
+- The app is **branded**: `build/icon.ico` (multi-size) is embedded in the exe
+  and installer, and the renderer shows the same mark (the equalizer *R* on an
+  amber "filament" tile) in the navrail and the first-run wizard. Source of
+  truth is `build/logo.svg`; regenerate the pixel/ICO set with
+  `powershell -File build\make-icon.ps1` from the `desktop/` directory.
 - Auto-update, digital signing, and the tray are deliberately **not** enabled
   yet; the release is unsigned (Windows SmartScreen shows the *"run anyway"*
   prompt), which is fine for a dev/early-access build.

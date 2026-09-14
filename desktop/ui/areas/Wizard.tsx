@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { Snapshot } from "../../src/domain/bridge";
-import { Icon } from "../icons";
+import { Icon, Logo } from "../icons";
 import { Button, HealthChip, KindChip, ErrorDetail } from "../components";
 
 // First-run setup guide. Plain-language, no terminal, no jargon — every step
@@ -101,7 +101,7 @@ export function Wizard({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
       <div className="wizard" role="dialog" aria-modal="true" aria-label="Setup guide">
         <header className="wizard-head">
           <div className="wizard-brand">
-            <Icon name="stripe" className="brand-mark" size={26} />
+            <Logo size={26} className="brand-mark" />
             <div>
               <div className="wizard-title">Set up a controller</div>
               <div className="sub">{STEP_TITLES[step]}</div>
