@@ -36,7 +36,7 @@ updated in the same commit.
 | **D2** | First-run setup wizard (highest priority): guided find/verify/rename/Wi-Fi hand-off, byte-exact config backup before writes, reboot-aware reconnect, honest errors | **in repo, builds + 21 host tests green, smoke verified** |
 | **D3** | Main Control Center: Lights (by name, per strip), Music (plain-language sources + auto-select), Themes (swatches, global + per strip), Cinematic (engine toggle, scene readout, QA bursts) | **in repo, builds + 40 host tests green, smoke verified** |
 | **D4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step: reachability, health, configured strips, live audio signal, brightness write round-trip with a visible blip, then a human confirm), health; session event log (in-memory, secret-free), structured report export (no secrets/addresses), restart/power-off behind confirms | **in repo, builds + 53 host tests green** |
-| **D5** | Firmware & recovery: `/api/ota` update, backup/restore, esptool flash recovery | planned |
+| **D5** | Firmware & recovery: OTA update (binary upload to `/api/ota`, reboot-aware reconnect, honest error blocks), config backup/restore (byte-exact, destructive restore behind confirms), esptool flash recovery | **OTA + config backup/restore in repo, builds + 59 host tests green; esptool flash recovery pending (serial toolchain)** |
 | **D6** | Polish + installer: electron-builder NSIS installer (single-file, one-click, desktop shortcut), full **brand identity + logo system** (`docs/BRAND.md`, `desktop/build/`) | **installer + logo system in repo; auto-update, tray, UX audit pending** |
 
 Hardware bench remains the single blocker for every firmware phase marked

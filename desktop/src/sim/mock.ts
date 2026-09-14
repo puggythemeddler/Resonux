@@ -349,6 +349,21 @@ export class MockController {
         return;
       }
 
+      // ---- D5: firmware OTA ----
+      case "POST /api/ota": {
+        const data: number[] = [];
+        req.on("data", (chunk) => {
+          for (const byte of chunk as Uint8Array) data.push(byte);
+        });
+        req.on("end", () => {
+          // Mirrors the firmware: accept the partition update and reboot to
+          // apply it — same observable restart gap the real unit produces.
+          json(200, { ok: true, bytes: data.length });
+          void this.restart(350);
+        });
+        return;
+      }
+
       // ---- D3: themes ----
       case "GET /api/themes": {
         json(200, {

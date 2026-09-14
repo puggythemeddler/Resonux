@@ -120,6 +120,40 @@ describe("MockController system commands", () => {
   });
 });
 
+describe("MockController firmware OTA", () => {
+  it("accepts a raw binary upload and restarts on the same port afterwards", async () => {
+    const m = new MockController({ id: "sim-ota" });
+    try {
+      const port = await m.listen();
+      const bytes = Buffer.alloc(512, 0x5a);
+      const res = await fetch(`http://127.0.0.1:${port}/api/ota`, {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body: bytes,
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, bytes: 512 });
+
+      // The simulated reboot gap is real, then the same port answers again.
+      const deadline = Date.now() + 4000;
+      let back = false;
+      while (Date.now() < deadline) {
+        try {
+          const status = (await (await fetch(`http://127.0.0.1:${port}/api/status`)).json()) as StatusSnapshot;
+          back = status.system.state === "reactive";
+          if (back) break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      expect(back).toBe(true);
+    } finally {
+      await m.close();
+    }
+  });
+});
+
 describe("MockController config writes", () => {
   it("renames the device through PUT /api/config", async () => {
     const m = new MockController({ id: "sim-cfg" });

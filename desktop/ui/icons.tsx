@@ -18,7 +18,8 @@ export type IconName =
   | "alert"
   | "check"
   | "power"
-  | "save";
+  | "save"
+  | "upload";
 
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   home: (
@@ -134,6 +135,12 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M4 4h12l4 4v12H4Z" />
       <path d="M8 4v6h8V4M8 20v-6h8v6" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 17V4M7 9l5-5 5 5" />
+      <path d="M4 20h16" />
     </>
   ),
 };

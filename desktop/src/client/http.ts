@@ -71,6 +71,44 @@ export const post = <T>(e: HttpEndpoint, path: string, body?: unknown, o?: HttpO
 export const put = <T>(e: HttpEndpoint, path: string, body?: unknown, o?: HttpOptions) =>
   httpJson<T>(e, "PUT", path, body, o);
 
+// Binary POST — firmware OTA upload. The body is sent raw (application/octet-
+// stream) so the endpoint receives the exact bytes the user picked. Longer
+// default timeout (30 s) because firmware images can be several hundred KB.
+export async function postBinary<T>(
+  e: HttpEndpoint,
+  path: string,
+  data: Uint8Array,
+  opts: HttpOptions = {}
+): Promise<T> {
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(baseUrl(e) + path, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: data,
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new HttpError(res.status, res.statusText, text);
+    if (text === "") return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new HttpError(res.status, res.statusText, `invalid json: ${text}`);
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new HttpError(0, "timeout", `no reply within ${timeoutMs} ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Raw body (no JSON parse) — used to back up a config byte-exact before a
 // write, so a restore later replays exactly what the controller returned.
 export async function getText(e: HttpEndpoint, path: string, opts: HttpOptions = {}): Promise<string> {

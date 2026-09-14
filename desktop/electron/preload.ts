@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ResonuxApi, Snapshot, ThemeMode, HardwareCheckReport } from "../src/domain/bridge";
+import type {
+  ResonuxApi,
+  Snapshot,
+  ThemeMode,
+  HardwareCheckReport,
+} from "../src/domain/bridge";
 
 const api: ResonuxApi = {
   getInfo: () => ipcRenderer.invoke("app:info"),
@@ -33,6 +38,9 @@ const api: ResonuxApi = {
   powerOff: (id: string) => ipcRenderer.invoke("device:powerOff", id),
   exportReport: (id: string, check: HardwareCheckReport | null) =>
     ipcRenderer.invoke("device:exportReport", id, check),
+  updateFirmware: (id: string) => ipcRenderer.invoke("device:updateFirmware", id),
+  backupConfig: (id: string) => ipcRenderer.invoke("device:backupConfig", id),
+  restoreConfig: (id: string) => ipcRenderer.invoke("device:restoreConfig", id),
   onChanged: (cb: (snapshot: Snapshot) => void) => {
     const listener = (_event: unknown, snapshot: Snapshot) => cb(snapshot);
     ipcRenderer.on("app:changed", listener);

@@ -291,6 +291,32 @@ by default.
   `restart()` on the same loopback port, exercising the registry's
   offline→heal path that a real config-reboot triggers.
 
+## Firmware OTA & config backup/restore (Phase 5)
+
+The Settings tab owns the two maintenance operations a non-technical user
+cares about — keeping the firmware fresh and keeping a safety copy of the
+settings. Both funnel through `AppCore`, never the renderer, and both log
+their outcome to the session event stream:
+
+- **Firmware update** (`AppCore.updateFirmware`): the main process shows a
+  `.bin` file picker, then streams the raw bytes with `postBinary` to the
+  controller's `/api/ota` endpoint. The firmware applies the partition update
+  and reboots — the same web-driven OTA path the firmware already documents.
+  The simulator accepts the same endpoint (`POST /api/ota` reads the raw
+  upload and restarts on the same port), so the flow is demonstrable without
+  hardware. Uploads are logged as "(N bytes)"; failures surface through the
+  usual what/hint/try-again error block.
+- **Config backup** (`AppCore.backupConfig`): fetches the live config document
+  byte-exact and hands it to a save dialog. The file contains every setting —
+  including the Wi-Fi password — and the UI says so plainly.
+- **Config restore** (`AppCore.restoreConfig`): parses a saved `.json`, parks
+  a byte-exact backup of the *current* config in `userData/backups` first,
+  PUTs the document, and reboots the controller to apply. Destructive, so it
+  sits behind a `ConfirmDialog`; after the write the app waits up to 20 s for
+  the controller to come back.
+- The simulator has no reboot, so it applies restores instantly and honestly
+  reports `rebooting: false`.
+
 ## Testing (host, no hardware)
 
 `desktop/test` runs via vitest; dev command `npm test` in `desktop/`.
@@ -298,14 +324,14 @@ by default.
 | Suite | Covers |
 |---|---|
 | `src/domain/discovery.test.ts` (5) | codec round-trip, lenient unknown-key parse, non-responder rejection — keeps the TS port byte-compatible with the C++ codec |
-| `src/sim/mock.test.ts` (16) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; restart on the same port keeping state; system commands: restart drops the port then comes back with the same port + reset state, power-off honestly reports sleeping; **D3**: themes payload/select-global+per-strip/PUT+DELETE/reset, per-strip effect with validation, audio source + auto-select, cinematic test burst |
+| `src/sim/mock.test.ts` (17) | REST parity: status shape, brightness mutation + 0–255 validation, cinematic toggle, 404s; `PUT /api/config` rename + AP→STA Wi-Fi hand-off; restart on the same port keeping state; system commands: restart drops the port then comes back with the same port + reset state, power-off honestly reports sleeping; **D5**: `/api/ota` accepts a raw binary upload and restarts on the same port; **D3**: themes payload/select-global+per-strip/PUT+DELETE/reset, per-strip effect with validation, audio source + auto-select, cinematic test burst |
 | `src/client/registry.test.ts` (4) | simulator health → online; going offline clears stale status (identity survives); offline→heal after a restart; removal |
-| `src/core/app.test.ts` (15) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline`; **D3**: getState/getThemes/selectTheme (global + per-strip)/setStripEffect/selectAudioSource/setAutoSelect/triggerCinematicTest; **D4**: requestRestart/requestPowerOff (with system state change); exportReport (secret-free JSON, session log); session log populated in snapshot |
+| `src/core/app.test.ts` (20) | full AppCore boot → auto simulator → select → live commands round-trip; simulator stop→drop; rename/setWifi with byte-exact backup; first-run `wizardNeeded` lifecycle; `waitOnline`; **D3**: getState/getThemes/selectTheme (global + per-strip)/setStripEffect/selectAudioSource/setAutoSelect/triggerCinematicTest; **D4**: requestRestart/requestPowerOff (with system state change); exportReport (secret-free JSON, session log); session log populated in snapshot; **D5**: updateFirmware over `/api/ota` (comes back online) + honest unreadable-file failure; backupConfig returns byte-exact config; restoreConfig replays a config and the controller reboots back with it + honest invalid-JSON failure |
 | `src/log/log.test.ts` (3) | **D4**: ordering/seq + ISO timestamps; cap at configured size (drops oldest); returned entries are copies (no internal mutation) |
 | `src/core/report.test.ts` (4) | **D4**: serialises app/controller/check/log into JSON; excludes addresses, ports, Wi-Fi credentials, and passwords; null check serialises honestly; `suggestedReportName` sanitises the controller name |
 | `src/diagnostics/check.test.ts` (6) | **D4**: `blipTarget` bounds; healthy live controller passes every step + restores brightness; unanswerable controller fails fast; flat audio and a write that won't restore are honest *warns*; full `runHardwareCheck` against the in-process simulator passes and labels itself *Simulator* |
 
-**53 host tests** across the seven suites, plus the firmware gate
+**59 host tests** across the seven suites, plus the firmware gate
 (`pio test -e native`, 144 tests) and `web` `tsc --noEmit` + `npm run build`.
 
 ## Verification commands (desktop)
@@ -364,7 +390,7 @@ npm run dist:dir    # build + unpacked app only → release/win-unpacked (no ins
 | **3** | Main Control Center: Lights (per strip, by name), Music (sources, plain language), Themes (swatches, global + per-strip), Cinematic basics (engine toggle + scene readout + QA test bursts) | **in repo, builds + 40 host tests green, smoke verified** |
 | **4** | Diagnostics + system controls: guided hardware check (live, honest step-by-step), health; session event log (in-memory, secret-free), structured report export (no secrets/addresses), restart/power-off behind confirms | **in repo, builds + 53 host tests green** |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
-| **6** | Firmware & recovery: OTA update, backup/restore, flash recovery via bundled esptool | planned |
+| **6** | Firmware & recovery: OTA update (via the firmware's `/api/ota`), config backup/restore (byte-exact, confirms), flash recovery via bundled esptool | **OTA + backup/restore in repo, builds + 59 host tests green; esptool serial flash recovery pending (needs a bundled serial toolchain)** |
 | **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | **installer in repo (NSIS, one-click, single-file exe); auto-update/tray/UX audit pending** |
 
 Rules for the plan: every phase changes README + the docs that describe it in

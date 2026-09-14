@@ -48,7 +48,7 @@ FastLED (already enforced by design, verified at compile).
 
 ## 1b. Control Center host tests (`desktop/`, vitest)
 
-`cd desktop && npm test` runs 53 tests across 7 suites (no hardware, no
+`cd desktop && npm test` runs 59 tests across 7 suites (no hardware, no
 network peers):
 
 - `discovery.test` — the TypeScript RESO_DISCOVER codec port round-trips the
@@ -61,10 +61,12 @@ network peers):
   variant performs the Wi-Fi hand-off (ap → sta, honest `rebooting:false`),
   and a keep-port `restart()` preserves address + state; **system commands**:
   `POST /api/system/restart` replies, drops the port, and comes back with
-  reset state; `POST /api/system/power-off` honestly reports `sleeping`; plus
-  **the D3 surface**: themes list/global + per-strip select/PUT + DELETE/reset,
-  a per-strip effect endpoint with validation, audio source pick + auto-select
-  (both reflected in `/api/audio/sources`), and the cinematic QA burst.
+  reset state; `POST /api/system/power-off` honestly reports `sleeping`;
+  **D5**: `POST /api/ota` accepts a raw binary upload and restarts on the
+  same port; plus **the D3 surface**: themes list/global + per-strip
+  select/PUT + DELETE/reset, a per-strip effect endpoint with validation,
+  audio source pick + auto-select (both reflected in `/api/audio/sources`),
+  and the cinematic QA burst.
 - `registry.test` — a registered controller heals online and reports latency;
   a controller that stops answering goes offline and **loses its stale status
   stats** (identity survives); a restart brings it back online on the same
@@ -80,7 +82,11 @@ network peers):
   `triggerCinematicTest`; **D4 system commands**: `requestRestart` (comes
   back online) and `requestPowerOff` (honest sleeping state), plus
   `exportReport` writes a secret-free JSON report with the session event log
-  (never includes addresses or passwords).
+  (never includes addresses or passwords); **D5 maintenance**: `updateFirmware`
+  OTA-uploads a `.bin` and the controller comes back online (unreadable files
+  fail honestly), `backupConfig` returns the live config byte-exact, and
+  `restoreConfig` replays a saved config — the controller reboots back with
+  it — while invalid JSON fails cleanly.
 - `log.test` — the **D4 session event log** (`LogStore`): entries are recorded
   in order with increasing seq numbers and ISO timestamps; the buffer caps at
   a configurable size and drops the oldest entries; returned entries are

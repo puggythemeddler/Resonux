@@ -345,3 +345,91 @@ describe("AppCore D4 system commands, log and export", () => {
     }
   });
 });
+
+describe("AppCore D5 firmware update and config backup/restore", () => {
+  it("updates firmware via OTA and the controller comes back online", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d5-fw-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    const binFile = path.join(dir, "firmware.bin");
+    fs.writeFileSync(binFile, Buffer.alloc(2048, 0xa5));
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const res = await core.updateFirmware(id, binFile);
+      expect(res.ok).toBe(true);
+      expect(await core.waitOnline(id, 6000)).toBe(true);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails honestly when the firmware file is unreadable", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d5-fwbad-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const res = await core.updateFirmware(id, path.join(dir, "missing.bin"));
+      expect(res.ok).toBe(false);
+      expect(res.detail).toContain("firmware file");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("exports the live config byte-exact for backup", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d5-bk-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const text = await core.backupConfig(id);
+      const cfg: ConfigPayload = JSON.parse(text);
+      expect(typeof cfg.deviceName).toBe("string");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("restores a saved config and the controller comes back online with it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d5-rs-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const backup = JSON.parse(await core.backupConfig(id)) as ConfigPayload;
+      const res = await core.restoreConfig(id, JSON.stringify({ ...backup, deviceName: "Restored Room" }));
+      expect(res.ok).toBe(true);
+      expect(res.rebootApplied).toBe(true);
+      expect(await core.waitOnline(id, 6000)).toBe(true);
+      const status = await core.getStatus(id);
+      expect(status.device).toBe("Restored Room");
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails honestly when the restore file is not a config document", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resonux-d5-rsbad-"));
+    const core = new AppCore({ dataDir: dir, appInfo: { version: "0.0.0-test" } });
+    try {
+      await waitFor(() => core.snapshot().controllers.some((c) => c.kind === "simulator" && c.online));
+      const id = core.snapshot().controllers.find((c) => c.kind === "simulator")!.id;
+
+      const res = await core.restoreConfig(id, "not json at all");
+      expect(res.ok).toBe(false);
+      expect(res.rebootApplied).toBe(false);
+    } finally {
+      core.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

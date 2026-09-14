@@ -97,6 +97,26 @@ export interface ExportReportResult {
   detail?: string;
 }
 
+/** Outcome of a firmware OTA upload to a controller. */
+export interface UpdateFirmwareResult {
+  ok: boolean;
+  detail?: string;
+}
+
+/** Outcome of "save the current config to a file". */
+export interface ConfigBackupResult {
+  saved: boolean;
+  filePath?: string;
+  detail?: string;
+}
+
+/** Outcome of "restore a previously saved config to a controller". */
+export interface ConfigRestoreResult {
+  ok: boolean;
+  rebootApplied: boolean;
+  detail?: string;
+}
+
 export interface ResonuxApi {
   getInfo(): Promise<AppInfo>;
   getSnapshot(): Promise<Snapshot>;
@@ -132,5 +152,12 @@ export interface ResonuxApi {
   powerOff(id: string): Promise<SystemCommandResult>;
   /** Export a structured report (facts only, no secrets) to a file the user picks. */
   exportReport(id: string, check: HardwareCheckReport | null): Promise<ExportReportResult>;
+  // ---- D5: firmware update + config backup/restore ----
+  /** Pick a firmware .bin in the main process and OTA-upload it to the controller. */
+  updateFirmware(id: string): Promise<UpdateFirmwareResult>;
+  /** Pick a save location in the main process and write the live config there. */
+  backupConfig(id: string): Promise<ConfigBackupResult>;
+  /** Pick a saved config .json in the main process and PUT it to the controller. */
+  restoreConfig(id: string): Promise<ConfigRestoreResult>;
   onChanged(cb: (snapshot: Snapshot) => void): () => void;
 }

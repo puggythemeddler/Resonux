@@ -122,6 +122,68 @@ function registerIpc(): void {
       return { saved: false, detail: err instanceof Error ? err.message : String(err) };
     }
   });
+  // ---- D5: firmware update + config backup/restore ----
+  ipcMain.handle("device:updateFirmware", async (_e, id: string) => {
+    const options = {
+      title: "Choose firmware image",
+      filters: [
+        { name: "Firmware image", extensions: ["bin"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    };
+    const res =
+      win && !win.isDestroyed()
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+    if (res.canceled || res.filePaths.length === 0) return { ok: false, detail: "Cancelled" };
+    try {
+      return (await core?.updateFirmware(id, res.filePaths[0])) ?? { ok: false, detail: "Control Center is not running." };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("device:backupConfig", async (_e, id: string) => {
+    try {
+      const text = await core?.backupConfig(id);
+      if (text === undefined) return { saved: false, detail: "Control Center is not running." };
+      const controller = core?.snapshot().controllers.find((c) => c.id === id);
+      const safeName = (controller?.name ?? "controller").replace(/[^a-zA-Z0-9_-]+/g, "-");
+      const options = {
+        title: "Save config backup",
+        defaultPath: `resonux-config-${safeName}-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: "Config backup", extensions: ["json"] }],
+      };
+      const r =
+        win && !win.isDestroyed()
+          ? await dialog.showSaveDialog(win, options)
+          : await dialog.showSaveDialog(options);
+      if (r.canceled || !r.filePath) return { saved: false };
+      fs.writeFileSync(r.filePath, text, "utf8");
+      return { saved: true, filePath: r.filePath };
+    } catch (err) {
+      return { saved: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle("device:restoreConfig", async (_e, id: string) => {
+    const options = {
+      title: "Choose a saved config backup",
+      filters: [
+        { name: "Config backup", extensions: ["json"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    };
+    const res =
+      win && !win.isDestroyed()
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+    if (res.canceled || res.filePaths.length === 0) return { ok: false, rebootApplied: false, detail: "Cancelled" };
+    try {
+      const text = fs.readFileSync(res.filePaths[0], "utf8");
+      return (await core?.restoreConfig(id, text)) ?? { ok: false, rebootApplied: false, detail: "Control Center is not running." };
+    } catch (err) {
+      return { ok: false, rebootApplied: false, detail: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 app.whenReady().then(() => {

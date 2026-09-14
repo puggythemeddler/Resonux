@@ -3,7 +3,7 @@
 // together and exposes the command surface the renderer calls over IPC.
 
 import { ControllerRegistry } from "../client/registry";
-import { get, getText, post, put, HttpError, describeError } from "../client/http";
+import { get, getText, post, put, postBinary, HttpError, describeError } from "../client/http";
 import { MockController } from "../sim/mock";
 import fs from "node:fs";
 import path from "node:path";
@@ -23,6 +23,8 @@ import type {
   ConfigCommandResult,
   HardwareCheckReport,
   SystemCommandResult,
+  UpdateFirmwareResult,
+  ConfigRestoreResult,
 } from "../domain/bridge";
 import type { ConfigPayload, FrameSample, StatePayload } from "../domain/types";
 import type { HttpEndpoint } from "../client/http";
@@ -240,7 +242,7 @@ export class AppCore {
   // Byte-exact snapshot of the current config, parked in userData/backups
   // before any config-writing command. The path is surfaced so recovery can
   // replay it later; the file itself is never read here.
-  private backupConfig(ep: HttpEndpoint, id: string): string | null {
+  private parkConfigBackup(ep: HttpEndpoint, id: string): string | null {
     try {
       const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "-");
       const dir = path.join(this.settings.dataDir, "backups");
@@ -265,7 +267,7 @@ export class AppCore {
     const trimmed = name.trim();
     if (!trimmed) return { ok: false, rebootApplied: false, backupPath: null, detail: "Name must not be empty" };
     try {
-      const backupPath = this.backupConfig(ep, id);
+      const backupPath = this.parkConfigBackup(ep, id);
       // GET-then-PUT round-trips the full config document: the firmware stores
       // whatever the PUT body is verbatim, so unknown keys survive untouched.
       const cfg = await get<ConfigPayload>(ep, "/api/config");
@@ -285,7 +287,7 @@ export class AppCore {
     if (!trimmedSsid) return { ok: false, rebootApplied: false, backupPath: null, detail: "Wi-Fi name must not be empty" };
     // Password never leaves this method — not logged, not persisted.
     try {
-      const backupPath = this.backupConfig(ep, id);
+      const backupPath = this.parkConfigBackup(ep, id);
       const cfg = await get<ConfigPayload>(ep, "/api/config");
       const net = cfg.net ?? { enabled: true, mode: 0, apSsid: "Resonux", apPassword: "", staSsid: "", staPassword: "" };
       const merged: ConfigPayload = { ...cfg, net: { ...net, staSsid: trimmedSsid, staPassword: password } };
@@ -461,5 +463,76 @@ export class AppCore {
       check,
       log: this.events.entries(),
     });
+  }
+
+  // ------------------------------------------------- D5: firmware + config
+
+  // OTA update: the user picks a .bin in the main process, and the bytes are
+  // streamed raw to the controller's /api/ota endpoint (the firmware applies
+  // the partition update and reboots). The same endpoint exists on the mock,
+  // so the flow is demonstrable end-to-end without hardware.
+  async updateFirmware(id: string, filePath: string): Promise<UpdateFirmwareResult> {
+    const ep = this.endpointFor(id);
+    const label = this.controllerLabel(id);
+    if (!ep) {
+      this.log("error", "firmware", "Firmware update was not sent: unknown controller", label);
+      return { ok: false, detail: `Unknown controller: ${id}` };
+    }
+    let data: Uint8Array;
+    try {
+      data = new Uint8Array(fs.readFileSync(filePath));
+    } catch (err) {
+      this.log("error", "firmware", "Firmware file could not be read", label);
+      return { ok: false, detail: `Could not read the firmware file: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (data.length === 0) {
+      this.log("error", "firmware", "The firmware file is empty", label);
+      return { ok: false, detail: "The firmware file is empty." };
+    }
+    try {
+      this.log("info", "firmware", `Uploading firmware update (${data.length} bytes)`, label);
+      const res = await postBinary<{ ok?: boolean; detail?: string }>(ep, "/api/ota", data, { timeoutMs: 60_000 });
+      const ok = res?.ok === true;
+      this.log(
+        ok ? "info" : "warn",
+        "firmware",
+        ok ? "Firmware update accepted; the controller will restart" : "Controller declined the firmware update",
+        label
+      );
+      return { ok, detail: ok ? undefined : (res?.detail ?? "The controller did not confirm the update.") };
+    } catch (err) {
+      this.log("warn", "firmware", "Firmware upload failed", label);
+      return { ok: false, detail: describeError(err) };
+    }
+  }
+
+  // Returns the controller's live config document as raw text (byte-exact),
+  // so the main process can save it to a file the user picks.
+  async backupConfig(id: string): Promise<string> {
+    const ep = this.endpointFor(id);
+    if (!ep) throw new HttpError(404, "unknown controller", id);
+    return getText(ep, "/api/config", { timeoutMs: 10_000 });
+  }
+
+  // Restores a previously exported config document. Destructive, so the UI
+  // confirms first; a byte-exact backup of the current config is parked
+  // before the write, and the controller reboots to apply it.
+  async restoreConfig(id: string, configJson: string): Promise<ConfigRestoreResult> {
+    const ep = this.endpointFor(id);
+    const label = this.controllerLabel(id);
+    if (!ep) {
+      this.log("error", "config", "Config restore was not sent: unknown controller", label);
+      return { ok: false, rebootApplied: false, detail: `Unknown controller: ${id}` };
+    }
+    try {
+      const cfg = JSON.parse(configJson) as ConfigPayload;
+      this.parkConfigBackup(ep, id);
+      await put(ep, "/api/config", cfg);
+      this.log("info", "config", "Config restored from backup", label);
+      return { ok: true, rebootApplied: true };
+    } catch (err) {
+      this.log("warn", "config", "Config restore failed", label);
+      return { ok: false, rebootApplied: false, detail: describeError(err) };
+    }
   }
 }

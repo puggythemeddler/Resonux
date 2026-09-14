@@ -11,6 +11,7 @@ import { Lights } from "./areas/Lights";
 import { Music } from "./areas/Music";
 import { Themes } from "./areas/Themes";
 import { Cinematic } from "./areas/Cinematic";
+import { Settings } from "./areas/Settings";
 
 type Area = "home" | "setup" | "lights" | "music" | "themes" | "cinematic" | "devices" | "diagnostics" | "settings";
 
@@ -159,6 +160,8 @@ export default function App() {
             <Cinematic snapshot={snapshot} />
           ) : area === "diagnostics" ? (
             <Diagnostics snapshot={snapshot} />
+          ) : area === "settings" ? (
+            <Settings snapshot={snapshot} />
           ) : (
             <ComingSoon area={area} />
           )}
