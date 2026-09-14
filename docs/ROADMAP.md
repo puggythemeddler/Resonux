@@ -37,7 +37,7 @@ updated in the same commit.
 | **D3** | Main Control Center: Lights (by name, per strip), Music (plain-language sources + auto-select), Themes (swatches, global + per strip), Cinematic (engine toggle, scene readout, QA bursts) | **in repo, builds + 34 host tests green, smoke verified** |
 | **D4** | Diagnostics + system controls: health, logs, export-amended reports (no secrets), restart/power-off behind confirms | planned |
 | **D5** | Firmware & recovery: `/api/ota` update, backup/restore, esptool flash recovery | planned |
-| **D6** | Polish + installer: electron-builder, auto-update, tray, UX audit vs `.impeccable` standards | planned |
+| **D6** | Polish + installer: electron-builder NSIS installer (single-file, one-click, desktop shortcut) | **installer in repo; auto-update, tray, UX audit pending** |
 
 Hardware bench remains the single blocker for every firmware phase marked
 "bench pending" (`docs/BENCH.md`); the desktop lane is host-only until then

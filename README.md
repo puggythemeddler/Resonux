@@ -193,7 +193,14 @@ npm run typecheck               # tsc (main + renderer)
 npm test                        # vitest — 34 host tests, no hardware
 npm run build                   # tsc main + vite renderer
 npm start                       # build + launch the Control Center
+npm run dist                    # package a Windows installer (release/)
 ```
+
+`npm run dist` produces a single-file **Windows installer** (NSIS):
+`desktop/release/Resonux Control Center Setup <version>.exe` — the installer
+installs the app with a desktop shortcut and needs no Node or toolchain on
+the target machine. A handy, unpacked copy (for USB use or a test run) is
+also left in `desktop/release/win-unpacked`.
 
 On first run the app auto-starts its bundled simulator (clearly labelled
 *Simulator*) so Home, Setup and the discovery flow work immediately; a

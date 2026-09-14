@@ -13,6 +13,7 @@ web/.vite/
 desktop/node_modules/
 desktop/dist/
 desktop/.vite/
+desktop/release/
 
 # ---- Python (companion / dev tools) ----
 __pycache__/

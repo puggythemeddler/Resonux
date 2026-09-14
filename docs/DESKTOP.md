@@ -279,6 +279,29 @@ npm run build:main
 $env:RESONUX_SMOKE="1"; npx electron .; Remove-Item Env:RESONUX_SMOKE
 ```
 
+## Packaging & installer
+
+`electron-builder` (NSIS) packages the compiled app into a single-file Windows
+installer — the non-technical user's path in:
+
+```powershell
+cd desktop
+npm run dist        # build + package → release/Resonux Control Center Setup <ver>.exe
+npm run dist:dir    # build + unpacked app only → release/win-unpacked (no installer)
+```
+
+- The installer is **one-click**, per-user, and drops a desktop shortcut
+  (`"nsis": { "oneClick": true }` in `package.json`). No Node, no PlatformIO,
+  no toolchain needed on the target machine.
+- `electron-builder` only ships what the app needs: `dist/**` (compiled main +
+  renderer) and `package.json`, into an asar. No source, no tests.
+- The packaged app uses the default Electron icon until a branded
+  `build/icon.ico` (256×256) is added — cosmetic only, flagged in the build
+  log as `default Electron icon is used`.
+- Auto-update, digital signing, and the tray are deliberately **not** enabled
+  yet; the release is unsigned (Windows SmartScreen shows the *"run anyway"*
+  prompt), which is fine for a dev/early-access build.
+
 ## Phase plan
 
 | Phase | Scope | Status |
@@ -289,7 +312,7 @@ $env:RESONUX_SMOKE="1"; npx electron .; Remove-Item Env:RESONUX_SMOKE
 | **4** | Diagnostics: health, logs, structured reports (no secrets), restart/power-off with confirms | planned |
 | **5** | Cinematic deep shaping: scenes, moods, comfort, companion supervision as a child process | planned |
 | **6** | Firmware & recovery: OTA update, backup/restore, flash recovery via bundled esptool | planned |
-| **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | planned |
+| **7** | Polish: installer (electron-builder), auto-update, tray, UX audit vs `.impeccable` review standards | **installer in repo (NSIS, one-click, single-file exe); auto-update/tray/UX audit pending** |
 
 Rules for the plan: every phase changes README + the docs that describe it in
 the same commit; destructive capabilities (restore, reset, flash) get explicit

@@ -2,6 +2,9 @@
   "name": "resonux-control-center",
   "version": "0.1.0",
   "description": "Resonux Control Center — desktop app for the Resonux music-reactive LED controller",
+  "author": {
+    "name": "Resonux"
+  },
   "main": "dist/electron/electron/main.js",
   "private": true,
   "scripts": {
@@ -11,7 +14,36 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "start": "npm run build && electron .",
-    "preview": "vite preview --outDir dist/renderer"
+    "preview": "vite preview --outDir dist/renderer",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.resonux.controlcenter",
+    "productName": "Resonux Control Center",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "deleteAppDataOnUninstall": false
+    }
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -23,6 +55,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
